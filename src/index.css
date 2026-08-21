@@ -1,0 +1,147 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ------------------------------------------------------------------ */
+/* Design tokens — Catatin V3                                          */
+/* Visual language from V2 spec: single-accent neutral system,         */
+/* soft surface cards, semantic color grammar, numeric emphasis.       */
+/* ------------------------------------------------------------------ */
+@theme inline {
+  /* ── Typography ──────────────────────────────────────────────── */
+  --font-sans: "Plus Jakarta Sans Variable", "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* ── Brand scale (V2 spec §5, matches Tailwind blue ramp) ───── */
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-300: #93c5fd;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+  --color-brand-800: #1e40af;
+  --color-brand-900: #1e3a8a;
+  --color-brand-950: #172554;
+
+  /* ── Semantic: income / success ──────────────────────────────── */
+  --color-income: #059669;
+  --color-income-soft: #ecfdf5;
+  --color-income-dark: #34d399;
+  --color-income-soft-dark: #022c22;
+
+  /* ── Semantic: expense / danger ──────────────────────────────── */
+  --color-expense: #e11d48;
+  --color-expense-soft: #fff1f2;
+  --color-expense-dark: #fb7185;
+  --color-expense-soft-dark: #4c0519;
+
+  /* ── Semantic: warning ───────────────────────────────────────── */
+  --color-warn: #d97706;
+  --color-warn-soft: #fffbeb;
+  --color-warn-dark: #fbbf24;
+  --color-warn-soft-dark: #451a03;
+
+  /* ── Semantic: info (alias to brand) ─────────────────────────── */
+  --color-info: #2563eb;
+
+  /* ── Neutral surfaces (V2 spec §5) ──────────────────────────── */
+  --color-canvas: #f8fafc;
+  --color-surface: #ffffff;
+  --color-elevated: #ffffff;
+
+  /* ── Text hierarchy ──────────────────────────────────────────── */
+  --color-ink: #0f172a;
+  --color-ink-secondary: #334155;
+  --color-ink-muted: #64748b;
+  --color-ink-faint: #94a3b8;
+
+  /* ── Borders ─────────────────────────────────────────────────── */
+  --color-border: #e2e8f0cc;
+  --color-border-inner: #f1f5f9;
+
+  /* ── Shadow tokens (V2 spec §11) ────────────────────────────── */
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 8px 24px -12px rgb(15 23 42 / 0.12);
+  --shadow-card-hover: 0 2px 4px rgb(15 23 42 / 0.06), 0 16px 40px -16px rgb(30 58 138 / 0.22);
+  --shadow-fab: 0 4px 14px rgb(37 99 235 / 0.35);
+}
+
+:root {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+  --color-brand-50: #15233f;
+  --color-brand-100: #1b2f55;
+  --color-brand-200: #24407a;
+  --color-brand-300: #93c5fd;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #3b6bf5;
+  --color-brand-700: #5a83f7;
+  --color-brand-800: #86a4f9;
+  --color-brand-900: #1e3a8a;
+  --color-brand-950: #0f1d3a;
+
+  --color-income: #34d399;
+  --color-income-soft: #022c22;
+  --color-income-dark: #34d399;
+  --color-income-soft-dark: #022c22;
+
+  --color-expense: #fb7185;
+  --color-expense-soft: #4c0519;
+  --color-expense-dark: #fb7185;
+  --color-expense-soft-dark: #4c0519;
+
+  --color-warn: #fbbf24;
+  --color-warn-soft: #451a03;
+  --color-warn-dark: #fbbf24;
+  --color-warn-soft-dark: #451a03;
+
+  --color-info: #60a5fa;
+
+  --color-canvas: #020617;
+  --color-surface: #0f172a;
+  --color-elevated: #1e293b;
+
+  --color-ink: #f1f5f9;
+  --color-ink-secondary: #cbd5e1;
+  --color-ink-muted: #94a3b8;
+  --color-ink-faint: #64748b;
+
+  --color-border: #1e293b;
+  --color-border-inner: #334155;
+}
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-canvas font-sans text-ink antialiased;
+  }
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+  button {
+    cursor: pointer;
+  }
+  ::selection {
+    @apply bg-brand-200 text-ink;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-brand-600);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
