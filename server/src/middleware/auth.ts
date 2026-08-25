@@ -49,6 +49,10 @@ export function optionalAuth(req: Request, _res: Response, next: NextFunction): 
 
 /** Menolak bila tidak ada session valid. */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+  if (req.profile) {
+    next();
+    return;
+  }
   optionalAuth(req, res, () => {
     if (!req.profile) {
       res.status(401).json({ error: "Unauthorized: login diperlukan" });

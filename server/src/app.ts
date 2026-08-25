@@ -3,6 +3,7 @@ import cookieParser from "cookie-parser";
 import path from "node:path";
 import fs from "node:fs";
 import { optionalAuth, requireAuth } from "./middleware/auth.js";
+import { apiKeyAuth } from "./middleware/api-key.js";
 import { originCheck } from "./middleware/security.js";
 import authRouter from "./routes/auth.js";
 import profileRouter from "./routes/profile.js";
@@ -44,6 +45,10 @@ export function createApp() {
 
   // Auth (rate limit hanya login & register — lihat routes/auth.ts)
   app.use("/api/auth", authRouter);
+
+  // API key auth (opsional — cookie session tetap jalan). Hanya untuk area /api protected;
+  // /api/webhooks & /api/auth di-mount di atas, jadi tidak terkena.
+  app.use("/api", apiKeyAuth);
 
   // Protected
   app.use("/api", requireAuth, dashboardRouter);
