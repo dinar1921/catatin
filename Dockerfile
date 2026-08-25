@@ -13,10 +13,10 @@ RUN npm run build        # vite build -> /app/dist
 
 # ---- Stage 2: Build backend (TypeScript -> JS) ----
 FROM node:22-slim AS backend
-WORKDIR /app
-COPY server/package.json server/package-lock.json ./
 WORKDIR /app/server
+COPY server/package.json server/package-lock.json server/tsconfig.json ./
 RUN npm ci
+COPY server/src ./src
 RUN npm run build        # tsc -> /app/server/dist
 RUN npm prune --omit=dev # hapus devDependencies (tsc/tsx/types)
 

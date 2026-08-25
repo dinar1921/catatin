@@ -2,6 +2,7 @@ node_modules
 dist
 server/dist
 server/server
+server/data
 server/uploads
 .env
 *.local
