@@ -1,11 +1,9 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { MagnifyingGlass, Plus, Receipt } from "@phosphor-icons/react";
+import { MagnifyingGlass, Receipt } from "@phosphor-icons/react";
 import { useApp } from "../../data/store";
 import { filterTransactions } from "../../lib/derive";
-import { Button, Card, EmptyState, Skeleton } from "../../components/ui";
-import { PageHeader } from "../../components/layout";
-import { FilterChip, useFilter as useFilterCtx } from "../../components/layout";
+import { Card, EmptyState, Pagination, Skeleton, usePagination } from "../../components/ui";
+import { PageHeader, FilterChip, useFilter as useFilterCtx } from "../../components/layout";
 import { TransactionList } from "../../components/TransactionList";
 import { TransactionDetailSheet } from "./TransactionDetail";
 
@@ -15,7 +13,6 @@ export function TransactionsPage() {
   const [search, setSearch] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [loading] = useState(false);
-  const navigate = useNavigate();
 
   const filtered = useMemo(() => {
     let ts = filterTransactions(data, filter, activeProfileId);
@@ -28,32 +25,28 @@ export function TransactionsPage() {
     return [...ts].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
   }, [data, filter, activeProfileId, search]);
 
+  const { pageItems, page, total, totalPages, setPage } = usePagination(filtered, 20);
+
   return (
     <div>
       <PageHeader
         title="Transaksi"
-        subtitle={`${filtered.length} transaksi ditemukan`}
+        subtitle={`${total} transaksi ditemukan`}
         actions={
-          <span className="hidden sm:block">
-            <Button onClick={() => navigate("/add?mode=manual")}>
-              <Plus size={16} weight="bold" /> Tambah Transaksi
-            </Button>
-          </span>
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+            <div className="relative min-w-0 flex-1 sm:w-64">
+              <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Cari merchant atau keterangan"
+                className="h-11 w-full rounded-xl border border-slate-200/80 bg-white pl-9 pr-3 text-sm text-ink placeholder:text-ink-faint focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 dark:border-slate-800 dark:bg-slate-900"
+              />
+            </div>
+            <FilterChip filter={filter} onClick={openFilter} />
+          </div>
         }
       />
-
-      <div className="mb-5 flex flex-wrap items-center gap-2">
-        <div className="relative min-w-0 flex-1 sm:max-w-xs">
-          <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Cari merchant atau keterangan"
-            className="h-11 w-full rounded-xl border border-slate-200/80 bg-white pl-9 pr-3 text-sm text-ink placeholder:text-ink-faint focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 dark:border-slate-800 dark:bg-slate-900"
-          />
-        </div>
-        <FilterChip filter={filter} onClick={openFilter} />
-      </div>
 
       {loading ? (
         <div className="flex flex-col gap-4">
@@ -78,21 +71,19 @@ export function TransactionsPage() {
             </div>
           ))}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : total === 0 ? (
         <Card>
           <EmptyState
             icon={<Receipt size={40} />}
             title="Belum ada transaksi"
-            body="Coba ubah filter, atau catat transaksi pertama kamu."
-            action={
-              <Button onClick={() => navigate("/add?mode=manual")}>
-                <Plus size={16} /> Tambah Transaksi
-              </Button>
-            }
+            body="Coba ubah filter, atau catat transaksi baru dari menu Tambah Transaksi di sidebar."
           />
         </Card>
       ) : (
-        <TransactionList data={data} transactions={filtered} onSelect={setDetailId} />
+        <>
+          <TransactionList data={data} transactions={pageItems} onSelect={setDetailId} />
+          <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+        </>
       )}
 
       <TransactionDetailSheet transactionId={detailId} onClose={() => setDetailId(null)} />

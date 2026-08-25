@@ -1,0 +1,41 @@
+# =====================================================================
+# Catatin — Docker Compose (satu service: frontend static + API + bot)
+#
+# Siapkan .env di folder ini (lihat .env.example), lalu:
+#   docker compose up -d --build
+#
+# Untuk EasyPanel: gunakan deploy dari Git repo (Dockerfile) dengan
+# satu volume dipasang di /data + env DATA_DIR=/data.
+# =====================================================================
+
+services:
+  catatin:
+    build: .
+    container_name: catatin
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    volumes:
+      # Satu volume persisten untuk seluruh data (DB SQLite + file struk)
+      - catatin-data:/data
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      DATA_DIR: /data
+      CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:5173}"
+      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-http://localhost:3001}"
+      TZ: "${TZ:-Asia/Jakarta}"
+      # Webhook WhatsApp (kosongkan bila tidak dipakai)
+      WHATSAPP_WEBHOOK_SECRET: "${WHATSAPP_WEBHOOK_SECRET:-}"
+      WHATSAPP_VERIFY_TOKEN: "${WHATSAPP_VERIFY_TOKEN:-}"
+      # Bot Telegram (token & chat ID dikonfigurasi via UI Settings)
+      TELEGRAM_API_BASE: "${TELEGRAM_API_BASE:-https://api.telegram.org}"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/auth/me').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  catatin-data:

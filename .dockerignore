@@ -1,0 +1,29 @@
+# Node
+node_modules
+server/node_modules
+
+# Build output
+dist
+server/dist
+
+# Database & uploads (volume runtime)
+server/server
+server/uploads
+*.db
+*.db-wal
+*.db-shm
+
+# Git / env
+.git
+.gitignore
+.env
+.env.local
+
+# Dokumentasi / keperluan lokal
+SS
+.freebuff
+.kilo
+
+# Log
+*.log
+npm-debug.log*

@@ -37,11 +37,13 @@ export function filterTransactions(data: AppData, f: FilterState, profileId: str
 }
 
 export function sumIncome(ts: Transaction[]): number {
-  return ts.filter((t) => t.type === "income" && t.source !== "opening_balance").reduce((s, t) => s + t.amount, 0);
+  return ts
+    .filter((t) => t.type === "income" && t.source !== "opening_balance" && t.source !== "transfer_in")
+    .reduce((s, t) => s + t.amount, 0);
 }
 
 export function sumExpense(ts: Transaction[]): number {
-  return ts.filter((t) => t.type === "expense").reduce((s, t) => s + t.amount, 0);
+  return ts.filter((t) => t.type === "expense" && t.source !== "transfer_out").reduce((s, t) => s + t.amount, 0);
 }
 
 export function netCashflow(ts: Transaction[]): number {
@@ -58,7 +60,7 @@ export interface SpendingSlice {
 export function spendingByCategory(data: AppData, ts: Transaction[], limit = 5): SpendingSlice[] {
   const map = new Map<string, SpendingSlice>();
   for (const t of ts) {
-    if (t.type !== "expense") continue;
+    if (t.type !== "expense" || t.source === "transfer_out") continue;
     const cat = categoryById(data, t.categoryId);
     const cur = map.get(t.categoryId) ?? {
       categoryId: t.categoryId,
@@ -76,7 +78,7 @@ export function spendingByCategory(data: AppData, ts: Transaction[], limit = 5):
 export function spendingByWallet(data: AppData, ts: Transaction[]): SpendingSlice[] {
   const map = new Map<string, SpendingSlice>();
   for (const t of ts) {
-    if (t.type !== "expense") continue;
+    if (t.type !== "expense" || t.source === "transfer_out") continue;
     const w = data.wallets.find((x) => x.id === t.walletId);
     const cur = map.get(t.walletId) ?? {
       categoryId: t.walletId,
@@ -117,13 +119,8 @@ export function billStatus(bill: Bill): BillStatus {
   const paid = bill.paidAmount >= bill.amount - 1;
   if (paid) return "paid_off";
 
-  let due: string | null = bill.dueDate;
-  if (!due && bill.dueDay != null) {
-    const now = new Date();
-    const y = now.getMonth() < bill.dueDay - 1 ? now.getFullYear() : now.getFullYear() + 1;
-    due = `${y}-${String(bill.dueDay).padStart(2, "0")}-01`;
-  }
-  if (due && due < today) return "overdue";
+  const due = billDueISO(bill);
+  if (due < today) return "overdue";
   if (due === today) return "due_today";
   return "unpaid";
 }
@@ -174,7 +171,7 @@ export function budgetRows(data: AppData, ts: Transaction[], profileId: string):
     .filter((b) => profileId === "all" || b.ownerProfileId === null || b.ownerProfileId === profileId)
     .map((b) => {
       const spent = ts
-        .filter((t) => t.type === "expense" && t.categoryId === b.categoryId)
+        .filter((t) => t.type === "expense" && t.source !== "transfer_out" && t.categoryId === b.categoryId)
         .reduce((s, t) => s + t.amount, 0);
       const name = categoryById(data, b.categoryId)?.name ?? "Kategori";
       return { budget: b, name, spent, pct: b.amount > 0 ? (spent / b.amount) * 100 : 0 };

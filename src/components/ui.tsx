@@ -11,7 +11,7 @@ import {
   type SelectHTMLAttributes,
 } from "react";
 import { createPortal } from "react-dom";
-import { X, CheckCircle, WarningCircle, Info } from "@phosphor-icons/react";
+import { X, CheckCircle, WarningCircle, Info, CaretLeft, CaretRight } from "@phosphor-icons/react";
 import { formatIDR, terbilang } from "../lib/format";
 
 export function cn(...parts: Array<string | false | null | undefined>): string {
@@ -121,16 +121,18 @@ export function AmountInput({
   onChange,
   placeholder = "0",
   showTerbilang = true,
+  compact,
 }: {
   value: number;
   onChange: (n: number) => void;
   placeholder?: string;
   showTerbilang?: boolean;
+  compact?: boolean;
 }) {
   return (
     <div>
       <div className="relative">
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-lg font-bold text-ink-muted">Rp</span>
+        <span className={cn("absolute left-3 top-1/2 -translate-y-1/2 font-bold text-ink-muted", compact ? "text-sm" : "text-lg")}>Rp</span>
         <input
           inputMode="numeric"
           value={value === 0 ? "" : value.toLocaleString("id-ID")}
@@ -139,7 +141,10 @@ export function AmountInput({
             onChange(digits ? parseInt(digits, 10) : 0);
           }}
           placeholder={placeholder}
-          className="tnum h-14 w-full rounded-xl border border-slate-200 bg-white pl-12 pr-3 text-xl font-bold text-ink placeholder:font-normal placeholder:text-ink-faint focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+          className={cn(
+            "tnum w-full rounded-xl border border-slate-200 bg-white font-bold text-ink placeholder:font-normal placeholder:text-ink-faint focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 dark:border-slate-700 dark:bg-slate-900 dark:text-white",
+            compact ? "h-11 pl-9 pr-3 text-sm" : "h-14 pl-12 pr-3 text-xl",
+          )}
         />
       </div>
       {showTerbilang && value > 0 && (
@@ -232,15 +237,18 @@ const badgeStyles: Record<BadgeVariant, string> = {
 export function Badge({
   variant = "neutral",
   children,
+  className,
 }: {
   variant?: BadgeVariant;
   children: ReactNode;
+  className?: string;
 }) {
   return (
     <span
       className={cn(
         "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 min-h-6 text-xs font-semibold",
         badgeStyles[variant],
+        className,
       )}
     >
       {children}
@@ -411,6 +419,7 @@ export function Sheet({
   children,
   footer,
   fullScreen,
+  dismissable = true,
 }: {
   open: boolean;
   onClose: () => void;
@@ -418,11 +427,12 @@ export function Sheet({
   children?: ReactNode;
   footer?: ReactNode;
   fullScreen?: boolean;
+  dismissable?: boolean;
 }) {
   useEffect(() => {
     if (!open) return;
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && dismissable) onClose();
     };
     document.body.style.overflow = "hidden";
     document.addEventListener("keydown", handleEscape);
@@ -430,7 +440,7 @@ export function Sheet({
       document.body.style.overflow = "";
       document.removeEventListener("keydown", handleEscape);
     };
-  }, [open, onClose]);
+  }, [open, onClose, dismissable]);
 
   if (!open) return null;
   return (
@@ -441,7 +451,7 @@ export function Sheet({
     >
       <div
         className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={dismissable ? onClose : undefined}
       />
       <div className={cn(
         "relative flex w-full flex-col overflow-hidden bg-white shadow-xl dark:bg-slate-900",
@@ -452,13 +462,15 @@ export function Sheet({
         {title && (
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
             <h2 className="text-base font-semibold text-ink">{title}</h2>
-            <button
-              onClick={onClose}
-              aria-label="Tutup"
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted hover:bg-slate-100 hover:text-ink dark:hover:bg-slate-800"
-            >
-              <X size={20} />
-            </button>
+            {dismissable && (
+              <button
+                onClick={onClose}
+                aria-label="Tutup"
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted hover:bg-slate-100 hover:text-ink dark:hover:bg-slate-800"
+              >
+                <X size={20} />
+              </button>
+            )}
           </div>
         )}
         <div className="flex-1 overflow-y-auto p-5">{children}</div>
@@ -726,5 +738,112 @@ export function Money({
       {sign && value > 0 ? "+" : ""}
       {formatIDR(value)}
     </span>
+  );
+}
+
+/* ================================================================== */
+/*  Pagination — usePagination hook + pager UI                         */
+/* ================================================================== */
+export function usePagination<T>(items: T[], pageSize = 20) {
+  const [page, setPage] = useState(1);
+  const total = items.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(page, totalPages);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(1);
+  }, [page, totalPages]);
+
+  const start = (safePage - 1) * pageSize;
+  return {
+    pageItems: items.slice(start, start + pageSize),
+    page: safePage,
+    total,
+    totalPages,
+    setPage,
+  };
+}
+
+export function Pagination({
+  page,
+  totalPages,
+  onChange,
+  className,
+}: {
+  page: number;
+  totalPages: number;
+  onChange: (p: number) => void;
+  className?: string;
+}) {
+  if (totalPages <= 1) return null;
+
+  const pages: (number | "…")[] = [];
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i);
+  } else {
+    const set = new Set<number>([1, 2, totalPages - 1, totalPages, page - 1, page, page + 1]);
+    [...set]
+      .filter((p) => p >= 1 && p <= totalPages)
+      .sort((a, b) => a - b)
+      .forEach((p, idx, arr) => {
+        if (idx > 0 && p - arr[idx - 1] > 1) pages.push("…");
+        pages.push(p);
+      });
+  }
+
+  const baseBtn =
+    "flex h-9 min-w-9 items-center justify-center rounded-lg px-2 text-sm font-semibold transition-colors";
+
+  return (
+    <nav
+      aria-label="Paginasi"
+      className={cn("mt-4 flex flex-wrap items-center justify-center gap-1", className)}
+    >
+      <button
+        onClick={() => onChange(Math.max(1, page - 1))}
+        disabled={page <= 1}
+        className={cn(
+          baseBtn,
+          "gap-1 text-ink-muted hover:bg-slate-100 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-slate-800",
+        )}
+      >
+        <CaretLeft size={14} weight="bold" />
+        <span className="hidden sm:inline">Sebelumnya</span>
+      </button>
+
+      {pages.map((p, i) =>
+        p === "…" ? (
+          <span key={`ellipsis-${i}`} className="flex h-9 items-center px-1 text-sm text-ink-faint">
+            …
+          </span>
+        ) : (
+          <button
+            key={p}
+            onClick={() => onChange(p)}
+            aria-current={p === page ? "page" : undefined}
+            className={cn(
+              baseBtn,
+              p === page
+                ? "bg-brand-600 text-white shadow-sm"
+                : "text-ink-muted hover:bg-slate-100 hover:text-ink dark:hover:bg-slate-800",
+            )}
+          >
+            {p}
+          </button>
+        ),
+      )}
+
+      <button
+        onClick={() => onChange(Math.min(totalPages, page + 1))}
+        disabled={page >= totalPages}
+        className={cn(
+          baseBtn,
+          "gap-1 text-ink-muted hover:bg-slate-100 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-slate-800",
+        )}
+      >
+        <span className="hidden sm:inline">Berikutnya</span>
+        <CaretRight size={14} weight="bold" />
+      </button>
+    </nav>
   );
 }

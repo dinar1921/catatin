@@ -5,6 +5,9 @@ import {
   ArrowLeft,
   CaretRight,
   CalendarBlank,
+  CalendarCheck,
+  Repeat,
+  HandCoins,
   CreditCard as CreditCardIcon,
   Check,
   Lightning,
@@ -12,10 +15,10 @@ import {
 import { useApp } from "../../data/store";
 import { billStatus, categoryById, memberById, walletVisible } from "../../lib/derive";
 import { formatIDR } from "../../lib/format";
-import { dueLabel, fmtDateID } from "../../lib/dates";
-import { Badge, Button, Card, EmptyState, Field, ProgressBar, Select, Sheet, useToast } from "../../components/ui";
+import { dueLabel, fmtDateID, fmtDayMonth } from "../../lib/dates";
+import { AmountInput, Badge, Button, Card, EmptyState, Field, Pagination, ProgressBar, Select, Sheet, usePagination, useToast } from "../../components/ui";
 import { PageHeader } from "../../components/layout";
-import type { BillType, PaymentMethod } from "../../lib/types";
+import type { Bill, BillType, Installment, PaymentMethod } from "../../lib/types";
 
 type TabId = "all" | "regular" | "recurring" | "debt_installment" | "cc";
 
@@ -63,6 +66,40 @@ function statusVariant(s: ReturnType<typeof billStatus>): "income" | "expense" |
   return s === "paid_off" || s === "paid" ? "income" : s === "overdue" ? "expense" : s === "due_today" ? "warning" : "neutral";
 }
 
+/* ------------------------------------------------------------------ */
+/* Helpers untuk baris tagihan (list)                                   */
+/* ------------------------------------------------------------------ */
+export function billRowStatus(s: ReturnType<typeof billStatus>): { label: string; variant: "default" | "income" | "expense" | "warning" | "danger" | "neutral" } {
+  if (s === "paid_off" || s === "paid") return { label: "Lunas", variant: "income" };
+  if (s === "overdue") return { label: "Overdue", variant: "expense" };
+  return { label: "Berjalan", variant: "default" };
+}
+
+export function billIcon(b: Bill, size = 20): React.ReactNode {
+  switch (b.type) {
+    case "recurring":
+      return <Repeat size={size} weight="duotone" />;
+    case "installment":
+      return <CalendarCheck size={size} weight="duotone" />;
+    case "debt":
+      return <HandCoins size={size} weight="duotone" />;
+    case "receivable":
+      return <HandCoins size={size} weight="duotone" />;
+    case "credit_card_statement":
+      return <CreditCardIcon size={size} weight="duotone" />;
+    default:
+      return <Receipt size={size} weight="duotone" />;
+  }
+}
+
+/** "Cicilan · tgl 25 - 7/24" | "Bulanan · tgl 15" | "Hutang · tgl 15 Agu" */
+export function billMetaLine(b: Bill, inst?: Installment | null): string {
+  const tgl = b.dueDate ? `tgl ${fmtDayMonth(b.dueDate)}` : b.dueDay != null ? `tgl ${b.dueDay}` : "";
+  const base = [billTypeLabel(b.type), tgl].filter(Boolean).join(" · ");
+  if (b.type === "installment" && inst) return `${base} - ${inst.paidCount}/${inst.tenor}`;
+  return base;
+}
+
 export function BillsPage() {
   const { data, activeProfileId } = useApp();
   const [tab, setTab] = useState<TabId>("all");
@@ -74,6 +111,8 @@ export function BillsPage() {
   );
 
   const shown = tab === "all" ? bills : bills.filter((b) => tabDefs.find((t) => t.id === tab)?.types.includes(b.type));
+
+  const { pageItems, page, totalPages, setPage } = usePagination(shown, 20);
 
   const summary = useMemo(() => {
     const unpaid = bills.filter((b) => b.paidAmount < b.amount);
@@ -116,37 +155,35 @@ export function BillsPage() {
           <EmptyState icon={<Receipt size={40} />} title="Tidak ada tagihan" body="Tagihan dibuat lewat form transaksi saat memilih 'Kaitkan tagihan?'." />
         </Card>
       ) : (
-        <div className="mt-4 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900">
-          {shown.map((b) => {
+        <Card padded={false} className="mt-4 divide-y divide-slate-100 dark:divide-slate-800">
+          {pageItems.map((b) => {
             const st = billStatus(b);
             const inst = data.installments.find((i) => i.billId === b.id);
-            const cc = b.creditCardId ? data.creditCards.find((c) => c.id === b.creditCardId) : null;
+            const remaining = Math.max(0, b.amount - b.paidAmount);
+            const row = billRowStatus(st);
             return (
               <Link key={b.id} to={`/bills/${b.id}`} className="flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-canvas/60">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 dark:bg-brand-950 text-brand-700 dark:text-brand-300">
-                  {b.type === "credit_card_statement" ? <CreditCardIcon size={20} weight="duotone" /> : <Receipt size={20} weight="duotone" />}
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300">
+                  {billIcon(b, 20)}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2">
-                    <span className="truncate text-sm font-bold text-ink">{b.title}</span>
-                    <Badge variant={statusVariant(st)}>{billStatusLabel(st)}</Badge>
+                    <span className="truncate text-sm font-medium text-ink">{b.title}</span>
+                    <Badge variant={row.variant}>{row.label}</Badge>
                   </span>
-                  <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-ink-muted">
-                    <span>{billTypeLabel(b.type)}</span>
-                    <span>·</span>
-                    <span className="tnum">{inst ? `${inst.paidCount}/${inst.tenor}` : dueLabel(b.dueDay, b.dueDate)}</span>
-                    {cc && <span className="tnum">· sisa {formatIDR(b.amount - b.paidAmount)}</span>}
-                  </span>
+                  <span className="mt-0.5 block truncate text-xs text-ink-muted">{billMetaLine(b, inst)}</span>
                 </span>
-                <span className="tnum shrink-0 text-right text-sm font-bold text-ink">
-                  {formatIDR(b.amount - b.paidAmount)}
+                <span className={`tnum shrink-0 text-right text-sm font-semibold ${remaining === 0 ? "text-ink-faint" : "text-ink"}`}>
+                  {formatIDR(remaining)}
                 </span>
-                <CaretRight size={16} className="shrink-0 text-ink-faint" />
+                <CaretRight size={16} weight="bold" className="shrink-0 text-ink-faint" />
               </Link>
             );
           })}
-        </div>
+        </Card>
       )}
+
+      <Pagination page={page} totalPages={totalPages} onChange={setPage} />
     </div>
   );
 }
@@ -156,8 +193,8 @@ function SummaryCard({ label, value, sub, tone }: { label: string; value: string
   return (
     <Card className="p-4">
       <p className="text-xs font-semibold text-ink-muted">{label}</p>
-      <p className={"mt-1 text-lg font-extrabold " + toneCls}>{value}</p>
-      <p className="text-[11px] text-ink-faint">{sub}</p>
+      <p className={"tnum mt-1 text-lg font-bold tracking-tight " + toneCls}>{value}</p>
+      <p className="tnum text-xs text-ink-faint">{sub}</p>
     </Card>
   );
 }
@@ -168,7 +205,7 @@ function SummaryCard({ label, value, sub, tone }: { label: string; value: string
 export function BillDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { data, payBill, payStatement } = useApp();
+  const { data, payBill } = useApp();
   const bill = data.bills.find((b) => b.id === id);
   const [payOpen, setPayOpen] = useState(false);
 
@@ -199,18 +236,18 @@ export function BillDetailPage() {
   return (
     <div className="mx-auto max-w-2xl">
       <button onClick={() => navigate(-1)} className="mb-3 flex items-center gap-1 text-sm font-semibold text-ink-muted hover:text-ink">
-        <ArrowLeft size={16} /> Kembali
+        <ArrowLeft size={16} weight="bold" /> Kembali
       </button>
 
-      <Card className="p-5">
+      <Card>
         <div className="flex items-start justify-between gap-3">
           <div>
             <span className="flex items-center gap-2">
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 dark:bg-brand-950 text-brand-700 dark:text-brand-300">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300">
                 {isStatement ? <CreditCardIcon size={22} weight="duotone" /> : <Receipt size={22} weight="duotone" />}
               </span>
               <span>
-                <span className="block text-lg font-extrabold text-ink">{bill.title}</span>
+                <span className="block text-lg font-bold tracking-tight text-ink">{bill.title}</span>
                 <span className="text-xs text-ink-muted">
                   {billTypeLabel(bill.type)} · {owner?.name}
                 </span>
@@ -220,7 +257,7 @@ export function BillDetailPage() {
           <Badge variant={statusVariant(st)}>{billStatusLabel(st)}</Badge>
         </div>
 
-        <div className="mt-5 grid grid-cols-3 gap-3">
+        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Stat label="Total" value={formatIDR(bill.amount)} />
           <Stat label="Sudah dibayar" value={formatIDR(bill.paidAmount)} />
           <Stat label="Sisa" value={formatIDR(remaining)} tone={remaining > 0 ? "bad" : "good"} />
@@ -238,7 +275,7 @@ export function BillDetailPage() {
           </div>
         )}
 
-        <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+        <dl className="mt-5 divide-y divide-slate-100 rounded-xl border border-slate-200/80 dark:divide-slate-800 dark:border-slate-800">
           <D label="Jatuh tempo" value={dueLabel(bill.dueDay, bill.dueDate)} />
           {cat && <D label="Kategori" value={cat.name} />}
           {bill.counterparty && <D label="Pihak terkait" value={bill.counterparty} />}
@@ -261,8 +298,8 @@ export function BillDetailPage() {
 
       {/* Statement kartu kredit: daftar transaksi penyusun (PRD §15.5) */}
       {isStatement && cc && (
-        <Card className="mt-4 p-5">
-          <p className="mb-1 text-sm font-bold text-ink">Transaksi penyusun statement</p>
+        <Card className="mt-4">
+          <p className="mb-1 text-sm font-semibold text-ink">Transaksi penyusun statement</p>
           <p className="mb-3 text-xs text-ink-muted">
             {cc.name} •{cc.lastFour} · cutoff tgl {cc.statementDay}, jatuh tempo tgl {cc.dueDay}
           </p>
@@ -273,10 +310,10 @@ export function BillDetailPage() {
               {ccTx.map((t) => (
                 <div key={t.id} className="flex items-center justify-between py-2.5 text-sm">
                   <span>
-                    <span className="block font-semibold text-ink">{t.merchant}</span>
+                    <span className="block font-medium text-ink">{t.merchant}</span>
                     <span className="text-xs text-ink-muted">{fmtDateID(t.occurredAt)}</span>
                   </span>
-                  <span className="tnum font-bold text-ink">{formatIDR(t.amount)}</span>
+                  <span className="tnum font-semibold text-ink">{formatIDR(t.amount)}</span>
                 </div>
               ))}
             </div>
@@ -299,7 +336,7 @@ export function BillDetailPage() {
           maxAmount={remaining}
           isStatement
           onPay={(walletId, amount, method) => {
-            payStatement(stmt.id, { amount, walletId, method });
+            payBill(bill.id, { amount, walletId, method });
             setPayOpen(false);
           }}
         />
@@ -327,17 +364,17 @@ export function BillDetailPage() {
 function Stat({ label, value, tone }: { label: string; value: string; tone?: "good" | "bad" }) {
   return (
     <div className="rounded-xl bg-canvas p-3">
-      <p className="text-[11px] font-semibold text-ink-muted">{label}</p>
-      <p className={"tnum mt-0.5 text-sm font-extrabold " + (tone === "bad" ? "text-rose-600 dark:text-rose-400" : tone === "good" ? "text-emerald-600 dark:text-emerald-400" : "text-ink")}>{value}</p>
+      <p className="text-xs font-semibold text-ink-muted">{label}</p>
+      <p className={"tnum mt-0.5 text-sm font-bold tracking-tight " + (tone === "bad" ? "text-rose-600 dark:text-rose-400" : tone === "good" ? "text-emerald-600 dark:text-emerald-400" : "text-ink")}>{value}</p>
     </div>
   );
 }
 
 function D({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <dt className="text-xs text-ink-muted">{label}</dt>
-      <dd className="font-semibold text-ink">{value}</dd>
+    <div className="flex items-baseline justify-between gap-4 px-4 py-2.5">
+      <dt className="shrink-0 text-xs text-ink-muted">{label}</dt>
+      <dd className="truncate text-right text-sm font-semibold text-ink">{value}</dd>
     </div>
   );
 }
@@ -410,12 +447,7 @@ function PaymentSheet({
           </Select>
         </Field>
         <Field label="Nominal" hint={isStatement ? "Pembayaran statement mengurangi kewajiban, bukan menambah pengeluaran." : undefined}>
-          <input
-            inputMode="numeric"
-            value={amount === 0 ? "" : amount.toLocaleString("id-ID")}
-            onChange={(e) => setAmount(parseInt(e.target.value.replace(/\D/g, ""), 10) || 0)}
-            className="tnum h-11 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 text-sm font-bold text-ink"
-          />
+          <AmountInput value={amount} onChange={setAmount} />
           <div className="mt-2 flex gap-2">
             {fullOption && (
               <button
@@ -423,7 +455,7 @@ function PaymentSheet({
                   setAmount(maxAmount);
                   setFull(true);
                 }}
-                className="rounded-full bg-brand-50 dark:bg-brand-950 px-3 py-1 text-xs font-bold text-brand-700 dark:text-brand-300"
+                className="rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700 dark:bg-brand-950 dark:text-brand-300"
               >
                 Bayar penuh ({formatIDR(maxAmount)})
               </button>

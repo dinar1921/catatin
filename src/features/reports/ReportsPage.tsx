@@ -22,6 +22,7 @@ import {
 import { useApp } from "../../data/store";
 import {
   budgetRows,
+  billStatus,
   categoryById,
   filterTransactions,
   netCashflow,
@@ -32,10 +33,12 @@ import {
   walletById,
 } from "../../lib/derive";
 import { formatIDR } from "../../lib/format";
-import { dueLabel, fmtPeriodLabel } from "../../lib/dates";
+import { fmtPeriodLabel, periodRange } from "../../lib/dates";
+import { exportReport } from "../../lib/api";
 import { Badge, Button, Card, CardHeader, ProgressBar, useToast } from "../../components/ui";
 import { FilterChip, PageHeader, useFilter as useFilterCtx } from "../../components/layout";
 import { TransactionDetailSheet } from "../transactions/TransactionDetail";
+import { billIcon, billMetaLine, billRowStatus } from "../bills/BillsPage";
 import type { AppData, Bill, Transaction } from "../../lib/types";
 
 export function ReportsPage() {
@@ -88,8 +91,23 @@ export function ReportsPage() {
     [ts],
   );
 
-  const exportPDF = () => toast.push("info", "Export PDF tersedia di Phase 2 (backend)");
-  const exportExcel = () => toast.push("info", "Export Excel tersedia di Phase 2 (backend)");
+  const doExport = async (format: "pdf" | "xlsx") => {
+    try {
+      const { start, end } = periodRange(filter.period);
+      const blob = await exportReport(format, { from: start, to: end, profileId: activeProfileId });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `catatin-laporan-${format === "pdf" ? "pdf" : "excel"}-${new Date().toISOString().slice(0, 10)}.${format === "pdf" ? "pdf" : "xlsx"}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.push("success", `Laporan ${format.toUpperCase()} diunduh`);
+    } catch (e) {
+      toast.push("error", e instanceof Error ? e.message : "Gagal mengekspor laporan");
+    }
+  };
 
   const periodLabel = fmtPeriodLabel(filter.period);
 
@@ -101,10 +119,10 @@ export function ReportsPage() {
           subtitle="Analisis detail cashflow keluarga"
           actions={
             <>
-              <Button variant="secondary" onClick={exportPDF}>
+              <Button variant="secondary" onClick={() => void doExport("pdf")}>
                 <FilePdf size={16} /> PDF
               </Button>
-              <Button variant="secondary" onClick={exportExcel}>
+              <Button variant="secondary" onClick={() => void doExport("xlsx")}>
                 <FileXls size={16} /> Excel
               </Button>
             </>
@@ -404,42 +422,24 @@ function BillsCard({ bills, data }: { bills: Bill[]; data: AppData }) {
       ) : (
         <ul className="-mx-4 -mb-4 divide-y divide-slate-100 sm:-mx-5 sm:-mb-5 dark:divide-slate-800">
           {list.map((b) => {
-            const isInstallment = b.type === "installment";
-            const cat = b.categoryId ? categoryById(data, b.categoryId) : undefined;
-            const wallet = b.walletId ? walletById(data, b.walletId) : undefined;
+            const st = billStatus(b);
             const inst = data.installments.find((i) => i.billId === b.id);
             const remaining = Math.max(0, b.amount - b.paidAmount);
+            const row = billRowStatus(st);
             return (
               <li key={b.id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
-                <span
-                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold ${
-                    isInstallment
-                      ? "bg-brand-50 text-brand-600 dark:bg-brand-950 dark:text-brand-300"
-                      : "bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-400"
-                  }`}
-                >
-                  {b.dueDay ?? "—"}
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300">
+                  {billIcon(b, 20)}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2">
                     <span className="truncate text-sm font-medium text-ink">{b.title}</span>
-                    <Badge variant={isInstallment ? "default" : "warning"}>{isInstallment ? "Cicilan" : "Rutin"}</Badge>
+                    <Badge variant={row.variant}>{row.label}</Badge>
                   </span>
-                  <span className="truncate text-xs text-ink-muted">
-                    {[cat?.name, wallet?.name].filter(Boolean).join(" · ") || "—"}
-                  </span>
-                  {inst && (
-                    <span className="mt-1.5 flex items-center gap-2">
-                      <ProgressBar pct={(inst.paidCount / inst.tenor) * 100} tone="brand" className="min-w-0 flex-1" />
-                      <span className="tnum text-[11px] text-ink-faint">
-                        {inst.paidCount}/{inst.tenor}
-                      </span>
-                    </span>
-                  )}
+                  <span className="mt-0.5 block truncate text-xs text-ink-muted">{billMetaLine(b, inst)}</span>
                 </span>
-                <span className="flex shrink-0 flex-col items-end gap-0.5">
-                  <span className="tnum text-sm font-semibold text-ink">{formatIDR(remaining)}</span>
-                  <span className="text-xs text-ink-faint">{dueLabel(b.dueDay, b.dueDate) || "—"}</span>
+                <span className={`tnum shrink-0 text-right text-sm font-semibold ${remaining === 0 ? "text-ink-faint" : "text-ink"}`}>
+                  {formatIDR(remaining)}
                 </span>
               </li>
             );
@@ -463,36 +463,35 @@ function DebtsCard({
 }) {
   const count = debts.length + receivables.length;
   return (
-    <Card padded={false}>
-      <div className="border-b border-slate-100 px-5 pb-3 pt-5 sm:px-6 dark:border-slate-800">
-        <p className="flex items-center gap-1.5 text-sm font-semibold text-ink">
-          <HandCoins size={16} weight="duotone" className="text-brand-600" /> Hutang & Piutang
-        </p>
-        <p className="text-xs text-ink-muted">Ringkasan posisi hutang dan piutang saat ini.</p>
-      </div>
+    <Card>
+      <CardHeader
+        icon={<HandCoins size={16} weight="duotone" />}
+        title="Hutang & Piutang"
+        subtitle="Ringkasan posisi hutang dan piutang saat ini."
+      />
       <div className="grid grid-cols-2">
-        <div className="min-w-0 p-4 sm:p-5">
+        <div className="min-w-0 pr-3">
           <div className="flex items-center gap-1.5">
-            <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-rose-50 text-rose-600 dark:bg-rose-950 dark:text-rose-400" aria-hidden="true">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-rose-50 text-rose-600 dark:bg-rose-950 dark:text-rose-400" aria-hidden="true">
               <TrendDown size={14} weight="duotone" />
             </span>
-            <span className="text-xs font-medium text-ink-muted">Hutang</span>
+            <span className="truncate text-xs font-medium text-ink-muted">Hutang</span>
           </div>
           <p className="tnum mt-2 truncate text-xl font-bold tracking-tight text-rose-600 sm:text-2xl dark:text-rose-400">{formatIDR(debtTotal)}</p>
           <p className="mt-0.5 truncate text-[11px] text-ink-faint sm:text-xs">dari {debts.length} catatan</p>
         </div>
-        <div className="min-w-0 border-l border-slate-100 p-4 sm:p-5 dark:border-slate-800">
+        <div className="min-w-0 border-l border-slate-100 pl-3 dark:border-slate-800 sm:pl-4">
           <div className="flex items-center gap-1.5">
-            <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400" aria-hidden="true">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400" aria-hidden="true">
               <TrendUp size={14} weight="duotone" />
             </span>
-            <span className="text-xs font-medium text-ink-muted">Piutang</span>
+            <span className="truncate text-xs font-medium text-ink-muted">Piutang</span>
           </div>
           <p className="tnum mt-2 truncate text-xl font-bold tracking-tight text-emerald-600 sm:text-2xl dark:text-emerald-400">{formatIDR(receivableTotal)}</p>
           <p className="mt-0.5 truncate text-[11px] text-ink-faint sm:text-xs">dari {receivables.length} catatan</p>
         </div>
       </div>
-      <div className="border-t border-slate-100 px-4 py-3 text-xs text-ink-muted sm:px-5 dark:border-slate-800">
+      <div className="mt-4 border-t border-slate-100 pt-3 text-xs text-ink-muted dark:border-slate-800">
         {count} catatan hutang/piutang tercatat.
       </div>
     </Card>

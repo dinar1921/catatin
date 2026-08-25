@@ -1,0 +1,12 @@
+# =====================================================================
+# Caddy reverse proxy — HTTPS otomatis (Let's Encrypt)
+#
+# Instal Caddy lalu jalankan: caddy run
+# Ganti catatin.domain.com dengan domain Anda, dan arahkan DNS A/AAAA
+# ke IP server home.
+# =====================================================================
+
+catatin.domain.com {
+	reverse_proxy 127.0.0.1:3001
+	encode gzip
+}

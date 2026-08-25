@@ -89,7 +89,7 @@ export function DashboardPage() {
   const monthName = new Date().toLocaleDateString("id-ID", { month: "long", year: "numeric" });
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-4">
       {/* ── GreetingHeader — V2 spec §14.1 ────────────────────── */}
       <div className="mb-1">
         <p className="text-sm text-ink-muted">
@@ -105,20 +105,20 @@ export function DashboardPage() {
       {pendingDrafts > 0 && (
         <button
           onClick={() => navigate("/approvals")}
-          className="flex w-full items-center gap-3 rounded-2xl border border-brand-200 bg-brand-50 px-4 py-3 text-left transition-all hover:border-brand-500/50 dark:border-brand-800 dark:bg-brand-950"
+          className="flex w-full items-center gap-3 rounded-2xl border border-brand-200 bg-brand-50 px-4 py-3 text-left shadow-card transition-colors hover:border-brand-500/50 dark:border-brand-800 dark:bg-brand-950"
         >
           <CheckSquare size={20} className="shrink-0 text-brand-600" weight="duotone" />
           <span className="flex-1 text-sm font-semibold text-brand-700 dark:text-brand-300">
             {pendingDrafts} draft menunggu persetujuanmu
           </span>
-          <CaretRight size={16} className="text-brand-600" />
+          <CaretRight size={16} weight="bold" className="text-brand-600" />
         </button>
       )}
 
       {/* ── BalanceCard — V2 spec §14.2: gradient hero + decorative circles ─ */}
       <button
         onClick={() => navigate("/wallets")}
-        className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-brand-700 via-brand-700 to-brand-800 p-5 text-left text-white shadow-card transition-all active:scale-[0.995] sm:p-6 dark:to-brand-900"
+        className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-brand-700 via-brand-700 to-brand-800 p-4 text-left text-white shadow-card transition-all active:scale-[0.995] sm:p-5 dark:to-brand-900"
       >
         {/* Decorative circles */}
         <div className="pointer-events-none absolute -right-10 -top-12 h-40 w-40 rounded-full bg-white/10" />
@@ -127,7 +127,7 @@ export function DashboardPage() {
         <div className="relative flex items-start justify-between gap-3">
           <div>
             <p className="flex items-center gap-1.5 text-sm text-brand-100">
-              <Wallet size={16} weight="bold" /> Total uangmu saat ini
+              <Wallet size={16} weight="duotone" /> Total uangmu saat ini
             </p>
             <p className="tnum mt-2 text-4xl font-bold leading-none tracking-tight sm:text-5xl">
               {formatIDR(balance)}
@@ -155,7 +155,7 @@ export function DashboardPage() {
       </button>
 
       {/* ── Row 2: Spending + Upcoming Bills (2-col at lg) ────── */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Spending utama — V2 spec §14.3 */}
         <Card>
           <CardHeader
@@ -175,7 +175,7 @@ export function DashboardPage() {
                   </div>
                   <ProgressBar
                     pct={(c.total / maxTop) * 100}
-                    tone={c.total / maxTop > 0.8 ? "expense" : "brand"}
+                    tone={c.total / maxTop > 0.8 ? "warn" : "brand"}
                   />
                 </li>
               ))}
@@ -205,7 +205,7 @@ export function DashboardPage() {
                   onClick={() => navigate(`/bills/${b.id}`)}
                   className="flex w-full items-center gap-3 py-3 text-left"
                 >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-700 dark:bg-brand-950 dark:text-brand-300">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-xs font-semibold text-brand-700 dark:bg-brand-950 dark:text-brand-300">
                     {b.dueDay}
                   </span>
                   <span className="min-w-0 flex-1">
@@ -234,56 +234,58 @@ export function DashboardPage() {
       </div>
 
       {/* ── Row 3: AI Insight — V2 spec §14.5 ─────────────────── */}
-      <div className="rounded-2xl border border-brand-200/70 bg-gradient-to-b from-brand-50 to-white p-5 dark:border-brand-900 dark:from-brand-950 dark:to-slate-900 sm:p-6">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-600">
-            <Sparkle size={15} className="text-white" weight="fill" />
-          </span>
-          <span className="text-xs font-bold uppercase tracking-[0.14em] text-brand-700 dark:text-brand-400">
-            Insight AI
-          </span>
+      <div className="overflow-hidden rounded-2xl border border-brand-200/70 bg-gradient-to-b from-brand-50 to-white shadow-card dark:border-brand-900 dark:from-brand-950 dark:to-slate-900">
+        <div className="p-5 sm:p-6">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-600">
+              <Sparkle size={15} className="text-white" weight="duotone" />
+            </span>
+            <span className="text-xs font-bold uppercase tracking-[0.14em] text-brand-700 dark:text-brand-400">
+              Insight AI
+            </span>
+          </div>
+          <h3 className="mt-3 text-base font-bold text-ink">Ringkasan pengeluaran</h3>
+          <p className="mt-1 text-sm leading-relaxed text-ink-secondary">{insightSentence}</p>
+
+          <button
+            onClick={() => setShowInsight(!showInsight)}
+            className="mt-3 flex items-center gap-1.5 text-sm font-semibold text-brand-700 dark:text-brand-400"
+          >
+            <Lightbulb size={15} weight="duotone" />
+            Lihat penjelasan
+            <CaretDown
+              size={14}
+              className={cn("transition-transform", showInsight && "rotate-180")}
+            />
+          </button>
+
+          {showInsight && (
+            <dl className="mt-3 rounded-xl border border-slate-200/80 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+              <div className="flex justify-between border-b border-slate-100 py-2 dark:border-slate-800">
+                <dt className="text-sm font-semibold text-ink">Angka saat ini</dt>
+                <dd className="tnum text-sm text-ink-secondary">{formatIDR(monthSpend)}</dd>
+              </div>
+              <div className="flex justify-between border-b border-slate-100 py-2 dark:border-slate-800">
+                <dt className="text-sm font-semibold text-ink">Pembanding</dt>
+                <dd className="tnum text-sm text-ink-secondary">{formatIDR(Math.round(avg3))}/bulan</dd>
+              </div>
+              <div className="flex justify-between border-b border-slate-100 py-2 dark:border-slate-800">
+                <dt className="text-sm font-semibold text-ink">Selisih</dt>
+                <dd className="tnum text-sm text-ink-secondary">
+                  {change >= 0 ? "+" : ""}
+                  {pct}%
+                </dd>
+              </div>
+              <div className="flex justify-between py-2">
+                <dt className="text-sm font-semibold text-ink">Runway</dt>
+                <dd className="tnum text-sm text-ink-secondary">±{rw.days} hari</dd>
+              </div>
+            </dl>
+          )}
         </div>
-        <h3 className="mt-3 text-base font-bold text-ink">Ringkasan pengeluaran</h3>
-        <p className="mt-1 text-sm leading-relaxed text-ink-secondary">{insightSentence}</p>
-
-        <button
-          onClick={() => setShowInsight(!showInsight)}
-          className="mt-3 flex items-center gap-1.5 text-sm font-semibold text-brand-700 dark:text-brand-400"
-        >
-          <Lightbulb size={15} weight="duotone" />
-          Lihat penjelasan
-          <CaretDown
-            size={14}
-            className={cn("transition-transform", showInsight && "rotate-180")}
-          />
-        </button>
-
-        {showInsight && (
-          <dl className="mt-3 rounded-xl border border-brand-100 bg-white p-4 dark:border-brand-900 dark:bg-slate-900">
-            <div className="flex justify-between border-b border-slate-100 py-2 dark:border-slate-800">
-              <dt className="text-sm font-semibold text-ink">Angka saat ini</dt>
-              <dd className="tnum text-sm text-ink-secondary">{formatIDR(monthSpend)}</dd>
-            </div>
-            <div className="flex justify-between border-b border-slate-100 py-2 dark:border-slate-800">
-              <dt className="text-sm font-semibold text-ink">Pembanding</dt>
-              <dd className="tnum text-sm text-ink-secondary">{formatIDR(Math.round(avg3))}/bulan</dd>
-            </div>
-            <div className="flex justify-between border-b border-slate-100 py-2 dark:border-slate-800">
-              <dt className="text-sm font-semibold text-ink">Selisih</dt>
-              <dd className="tnum text-sm text-ink-secondary">
-                {change >= 0 ? "+" : ""}
-                {pct}%
-              </dd>
-            </div>
-            <div className="flex justify-between py-2">
-              <dt className="text-sm font-semibold text-ink">Runway</dt>
-              <dd className="tnum text-sm text-ink-secondary">±{rw.days} hari</dd>
-            </div>
-          </dl>
-        )}
 
         {/* Recommendation footer — V2 spec §14.5 */}
-        <div className="mt-4 border-t border-brand-100 pt-4 dark:border-brand-900">
+        <div className="border-t border-brand-100 bg-white/70 px-5 py-4 sm:px-6 dark:border-slate-800 dark:bg-slate-900/70">
           <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-[0.14em] text-brand-600 dark:text-brand-400">
             <ListChecks size={15} weight="duotone" /> Rekomendasi
           </p>
@@ -293,7 +295,7 @@ export function DashboardPage() {
       </div>
 
       {/* ── Row 4: Recent Transactions + Budget Status (2-col) ── */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Transaksi terbaru — V2 spec §14.6 */}
         <Card>
           <CardHeader
@@ -317,7 +319,7 @@ export function DashboardPage() {
                   >
                     <span
                       className={cn(
-                        "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+                        "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
                         isExpense
                           ? "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
                           : "bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400",
@@ -344,7 +346,7 @@ export function DashboardPage() {
                           isExpense ? "text-ink" : "text-emerald-600 dark:text-emerald-400",
                         )}
                       >
-                        {isExpense ? "-" : "+"}
+                        {isExpense ? "−" : "+"}
                         {formatIDR(t.amount)}
                       </span>
                       <span className="block text-xs text-ink-faint">

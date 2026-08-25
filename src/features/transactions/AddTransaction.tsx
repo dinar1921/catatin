@@ -1,10 +1,11 @@
 import { useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Trash, ArrowLeft, UploadSimple } from "@phosphor-icons/react";
-import { useApp, type NewBillInput } from "../../data/store";
+import { useApp } from "../../data/store";
+import type { NewBillInput } from "../../lib/types";
 import { expenseCats, incomeCats } from "../../lib/derive";
 import { todayISO } from "../../lib/dates";
-import { AmountInput, Button, Field, Input, Select, useToast } from "../../components/ui";
+import { AmountInput, Button, Card, Field, Input, Select, useToast } from "../../components/ui";
 import { PageHeader } from "../../components/layout";
 import type { Attachment, PaymentMethod, TransactionType } from "../../lib/types";
 
@@ -20,7 +21,7 @@ export function AddTransactionPage() {
   return (
     <div className="mx-auto max-w-xl">
       <button onClick={() => navigate(-1)} className="mb-3 flex items-center gap-1 text-sm font-semibold text-ink-muted hover:text-ink">
-        <ArrowLeft size={16} /> Kembali
+        <ArrowLeft size={16} weight="bold" /> Kembali
       </button>
       <PageHeader title="Tambah Transaksi" subtitle="Catat pemasukan atau pengeluaran" />
       <ManualForm />
@@ -132,7 +133,7 @@ function ManualForm() {
   };
 
   return (
-    <div className="space-y-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
+    <Card className="space-y-5">
       {/* Tipe */}
       <div className="grid grid-cols-2 gap-2">
         <button
@@ -142,7 +143,7 @@ function ManualForm() {
           }}
           className={
             type === "expense"
-              ? "rounded-xl border-2 border-bad bg-rose-50 dark:bg-rose-950 px-4 py-3 text-sm font-bold text-rose-600 dark:text-rose-400"
+              ? "rounded-xl border-2 border-expense bg-rose-50 dark:bg-rose-950 px-4 py-3 text-sm font-semibold text-rose-600 dark:text-rose-400"
               : "rounded-xl border border-slate-200/80 dark:border-slate-800 px-4 py-3 text-sm font-semibold text-ink-muted hover:border-slate-300 dark:border-slate-600"
           }
         >
@@ -155,7 +156,7 @@ function ManualForm() {
           }}
           className={
             type === "income"
-              ? "rounded-xl border-2 border-good bg-emerald-50 dark:bg-emerald-950 px-4 py-3 text-sm font-bold text-emerald-600 dark:text-emerald-400"
+              ? "rounded-xl border-2 border-income bg-emerald-50 dark:bg-emerald-950 px-4 py-3 text-sm font-semibold text-emerald-600 dark:text-emerald-400"
               : "rounded-xl border border-slate-200/80 dark:border-slate-800 px-4 py-3 text-sm font-semibold text-ink-muted hover:border-slate-300 dark:border-slate-600"
           }
         >
@@ -207,7 +208,7 @@ function ManualForm() {
               onClick={() => setBillOption(o.id)}
               className={
                 billOption === o.id
-                  ? "rounded-xl border-2 border-primary-600 bg-brand-50 dark:bg-brand-950 px-3 py-2 text-xs font-bold text-brand-800 dark:text-brand-200 dark:bg-brand-50 dark:bg-brand-950/15 dark:text-brand-200"
+                  ? "rounded-xl border-2 border-brand-600 bg-brand-50 px-3 py-2 text-xs font-semibold text-brand-700 dark:bg-brand-950/15 dark:text-brand-300"
                   : "rounded-xl border border-slate-200/80 dark:border-slate-800 px-3 py-2 text-xs font-semibold text-ink-muted hover:border-slate-300 dark:border-slate-600"
               }
             >
@@ -218,8 +219,8 @@ function ManualForm() {
       </div>
 
       {billOption !== "none" && (
-        <div className="space-y-4 rounded-xl border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-950/50 p-4 dark:bg-brand-50 dark:bg-brand-950/10">
-          <p className="text-xs font-bold uppercase tracking-wide text-brand-800 dark:text-brand-200 dark:text-brand-200">
+        <div className="space-y-4 rounded-xl border border-brand-200 bg-brand-50 p-4 dark:border-brand-800 dark:bg-brand-950/15">
+          <p className="text-xs font-semibold uppercase tracking-wide text-brand-700 dark:text-brand-300">
             Form tagihan {billOption === "regular" ? "biasa" : billOption === "recurring" ? "berulang" : "cicilan"}
           </p>
           <Field label="Nama tagihan">
@@ -239,15 +240,17 @@ function ManualForm() {
             </div>
           )}
           {billOption === "installment" && (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Tenor (bulan)" error={errors.tenor}>
-                <Input inputMode="numeric" value={tenor} onChange={(e) => setTenor(e.target.value.replace(/\D/g, "").slice(0, 3))} placeholder="24" />
-              </Field>
+            <div className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Tenor (bulan)" error={errors.tenor}>
+                  <Input inputMode="numeric" value={tenor} onChange={(e) => setTenor(e.target.value.replace(/\D/g, "").slice(0, 3))} placeholder="24" />
+                </Field>
+                <Field label="Hari jatuh tempo">
+                  <Input inputMode="numeric" value={dueDay} onChange={(e) => setDueDay(e.target.value.replace(/\D/g, "").slice(0, 2))} placeholder="25" />
+                </Field>
+              </div>
               <Field label="Nominal cicilan per bulan" error={errors.installmentAmount}>
-                <AmountInput value={installmentAmount} onChange={setInstallmentAmount} showTerbilang={false} />
-              </Field>
-              <Field label="Hari jatuh tempo">
-                <Input inputMode="numeric" value={dueDay} onChange={(e) => setDueDay(e.target.value.replace(/\D/g, "").slice(0, 2))} placeholder="25" />
+                <AmountInput value={installmentAmount} onChange={setInstallmentAmount} showTerbilang={false} compact />
               </Field>
             </div>
           )}
@@ -306,9 +309,9 @@ function ManualForm() {
         {!attachment ? (
           <button
             onClick={() => fileRef.current?.click()}
-            className="flex w-full flex-col items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 bg-canvas/50 px-4 py-8 text-center hover:border-primary-600/50"
+            className="flex w-full flex-col items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 bg-canvas/50 px-4 py-8 text-center hover:border-brand-600/50"
           >
-            <UploadSimple size={24} className="text-ink-faint" />
+            <UploadSimple size={24} className="text-ink-faint" weight="duotone" />
             <span className="text-sm font-semibold text-ink-muted">Pilih foto struk</span>
             <span className="text-xs text-ink-faint">JPG/PNG, maks 5MB</span>
           </button>
@@ -322,7 +325,7 @@ function ManualForm() {
                   Ganti
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setAttachment(null)} className="text-rose-600 dark:text-rose-400">
-                  <Trash size={14} /> Hapus
+                  <Trash size={14} weight="bold" /> Hapus
                 </Button>
               </div>
             </div>
@@ -342,7 +345,7 @@ function ManualForm() {
       {merchant && (
         <MerchantHint merchant={merchant} onPick={(c) => setCategoryId(c)} />
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -371,7 +374,7 @@ function MerchantHint({ merchant, onPick }: { merchant: string; onPick: (categor
         <button
           key={h.id}
           onClick={() => onPick(h.id)}
-          className="rounded-full bg-white dark:bg-slate-900 px-3 py-1 text-xs font-semibold text-brand-700 dark:text-brand-300 ring-1 ring-line hover:ring-primary-600/40"
+          className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-brand-700 ring-1 ring-slate-200 hover:ring-brand-600/40 dark:bg-slate-900 dark:text-brand-300 dark:ring-slate-700"
         >
           {h.name}
         </button>

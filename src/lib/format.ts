@@ -1,8 +1,8 @@
 const idr = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 });
 
-/** 1250000 -> "Rp1.250.000"; -2500000 -> "-Rp2.500.000" */
+/** 1250000 -> "Rp1.250.000"; -2500000 -> "−Rp2.500.000" */
 export function formatIDR(n: number): string {
-  return (n < 0 ? "-" : "") + "Rp" + idr.format(Math.round(Math.abs(n)));
+  return (n < 0 ? "−" : "") + "Rp" + idr.format(Math.round(Math.abs(n)));
 }
 
 /** -402000 -> "−Rp 402.000"; 1378000 -> "+Rp 1.378.000"; 0 -> "Rp 0" (tanda tipografis + spasi) */
@@ -15,7 +15,7 @@ export function formatIDRSigned(n: number): string {
 /** 1250000 -> "1,25 jt"; 350000 -> "350 rb" (untuk list mobile/compact) */
 export function formatIDRShort(n: number): string {
   const abs = Math.abs(n);
-  const sign = n < 0 ? "-" : "";
+  const sign = n < 0 ? "−" : "";
   if (abs >= 1_000_000_000) return `${sign}${trim(abs / 1_000_000_000)} M`;
   if (abs >= 1_000_000) return `${sign}${trim(abs / 1_000_000)} jt`;
   if (abs >= 1_000) return `${sign}${trim(abs / 1_000)} rb`;

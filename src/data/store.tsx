@@ -1,437 +1,346 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type {
   AppData,
-  Attachment,
-  Bill,
+  CategoryDirection,
   Draft,
+  NewTransactionInput,
   PaymentMethod,
   Transaction,
-  TransactionType,
   Wallet,
 } from "../lib/types";
-import { buildSeed } from "./seed";
-import { monthKey, todayISO } from "../lib/dates";
+import * as api from "../lib/api";
 
-const LS_KEY = "catatin:phase1:v3";
+const THEME_KEY = "catatin:theme";
 
-interface Persisted {
-  data: AppData;
-  sessionProfileId: string;
-  activeProfileId: string;
-  theme: "light" | "dark";
-}
-
-function load(): Persisted {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw) {
-      const p = JSON.parse(raw) as Persisted;
-      if (p?.data?.transactions) return p;
-    }
-  } catch {
-    /* abaikan, pakai seed */
-  }
+function emptyData(): AppData {
   return {
-    data: buildSeed(),
-    sessionProfileId: "p-dinar",
-    activeProfileId: "all",
-    theme: "light",
+    group: { id: "", name: "", ownerProfileId: "" },
+    members: [],
+    wallets: [],
+    categories: [],
+    transactions: [],
+    bills: [],
+    installments: [],
+    creditCards: [],
+    statements: [],
+    budgets: [],
+    drafts: [],
+    notifications: [],
   };
 }
 
-export interface NewBillInput {
-  kind: "regular" | "recurring" | "installment";
-  amount: number;
-  dueDay: number | null;
-  dueDate: string | null;
-  frequency: string | null;
-  tenor: number | null;
-  installmentAmount: number | null;
-  title: string;
+function loadTheme(): "light" | "dark" {
+  try {
+    return localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light";
+  } catch {
+    return "light";
+  }
 }
 
-export interface NewTransactionInput {
-  type: TransactionType;
-  amount: number;
-  categoryId: string;
-  walletId: string;
-  paymentMethod: PaymentMethod | null;
-  creditCardId: string | null;
-  occurredAt: string;
-  merchant: string;
-  description: string;
-  ownerProfileId: string;
-  attachment: Attachment | null;
-  items?: { itemName: string; quantity: number; unitPrice: number; totalPrice: number }[];
-  source?: Transaction["source"];
-  bill?: NewBillInput | null;
-}
+let seq = 100;
+const nid = (p: string) => `${p}-${++seq}`;
 
-interface StoreCtx {
+export interface StoreCtx {
   data: AppData;
   sessionProfileId: string;
   activeProfileId: string;
   theme: "light" | "dark";
-  login: (profileId: string) => void;
-  logout: () => void;
+  loading: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  register: (name: string, email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
   setActiveProfile: (id: string) => void;
   toggleTheme: () => void;
-  resetData: () => void;
-  addTransaction: (input: NewTransactionInput) => string;
+  resetData: () => Promise<void>;
+  addTransaction: (input: NewTransactionInput) => void;
   updateTransaction: (id: string, patch: Partial<Transaction>) => void;
   deleteTransaction: (id: string) => void;
   addWallet: (w: { name: string; scope: "personal" | "shared"; ownerProfileId: string | null }) => void;
+  updateWallet: (id: string, patch: { name?: string; scope?: "personal" | "shared"; ownerProfileId?: string | null }) => void;
+  deleteWallet: (id: string) => Promise<void>;
+  transferBetweenWallets: (input: { fromWalletId: string; toWalletId: string; amount: number; occurredAt?: string; description?: string }) => void;
   addBudget: (b: { categoryId: string; amount: number; ownerProfileId: string | null }) => void;
+  updateBudget: (id: string, patch: { categoryId?: string; amount?: number; ownerProfileId?: string | null }) => void;
+  deleteBudget: (id: string) => void;
+  updateCategory: (id: string, patch: { name?: string; direction?: CategoryDirection }) => void;
+  deleteCategory: (id: string) => Promise<void>;
+  updateGroupName: (name: string) => void;
   payBill: (billId: string, opts: { amount: number; walletId: string; method: PaymentMethod | null; full?: boolean }) => void;
-  payStatement: (statementId: string, opts: { amount: number; walletId: string; method: PaymentMethod | null }) => void;
   approveDraft: (id: string, patch: Partial<Draft>) => void;
   rejectDraft: (id: string) => void;
+  deleteDraft: (id: string) => void;
   markNotifRead: (id: string) => void;
   markNotifAllRead: () => void;
 }
 
 const Ctx = createContext<StoreCtx | null>(null);
 
-let seq = 100;
-const nid = (p: string) => `${p}-${++seq}`;
-
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<Persisted>(load);
+  const [data, setData] = useState<AppData>(emptyData);
+  const [sessionProfileId, setSessionProfileId] = useState("");
+  const [activeProfileId, setActiveProfileId] = useState("all");
+  const [theme, setTheme] = useState<"light" | "dark">(loadTheme);
+  const [loading, setLoading] = useState(true);
+
+  const loadDashboard = async () => {
+    try {
+      const d = await api.getDashboard();
+      setData(d);
+    } catch (err) {
+      // Jangan wipe data pada error transien (auto-refresh periodik).
+      console.error("[store] Gagal memuat dashboard:", err);
+    }
+  };
+
+  // Mount: coba restore session via cookie (tanpa auto-login mock).
+  useEffect(() => {
+    api
+      .getMe()
+      .then(async (me) => {
+        setSessionProfileId(me.profile.id);
+        await loadDashboard();
+      })
+      .catch(() => {
+        setSessionProfileId("");
+        setData(emptyData());
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Auto-refresh periodik: data baru dari bot / anggota lain tampil tanpa reload manual.
+  useEffect(() => {
+    if (!sessionProfileId) return;
+    let busy = false;
+    const timer = setInterval(() => {
+      if (busy) return;
+      busy = true;
+      loadDashboard().finally(() => {
+        busy = false;
+      });
+    }, 20_000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionProfileId]);
 
   useEffect(() => {
     try {
-      localStorage.setItem(LS_KEY, JSON.stringify(state));
-    } catch {
-      /* kuota penuh: abaikan */
-    }
-  }, [state]);
+      localStorage.setItem(THEME_KEY, theme);
+    } catch { /* abaikan */ }
+  }, [theme]);
 
-  const api = useMemo<StoreCtx>(() => {
-    const mutate = (fn: (d: AppData) => AppData) =>
-      setState((s) => ({ ...s, data: fn(s.data) }));
+  const apiCtx = useMemo<StoreCtx>(() => {
+    const refresh = () => loadDashboard();
+    const fail = (label: string, err: unknown) => {
+      console.error(`[store] ${label}:`, err);
+      refresh();
+    };
 
     return {
-      data: state.data,
-      sessionProfileId: state.sessionProfileId,
-      activeProfileId: state.activeProfileId,
-      theme: state.theme,
-      login: (profileId) => setState((s) => ({ ...s, sessionProfileId: profileId })),
-      logout: () => setState((s) => ({ ...s, sessionProfileId: "" })),
-      setActiveProfile: (id) => setState((s) => ({ ...s, activeProfileId: id })),
-      toggleTheme: () =>
-        setState((s) => ({ ...s, theme: s.theme === "light" ? "dark" : "light" })),
-      resetData: () =>
-        setState({
-          data: buildSeed(),
-          sessionProfileId: "p-dinar",
-          activeProfileId: "all",
-          theme: "light",
-        }),
+      data,
+      sessionProfileId,
+      activeProfileId,
+      theme,
+      loading,
 
-      addTransaction: (input) => {
-        const id = nid("t");
-        mutate((d) => {
-          let transactions = d.transactions;
-          let bills = d.bills;
-          let installments = d.installments;
-
-          if (input.bill) {
-            const billId = nid("b");
-            const b: Bill = {
-              id: billId,
-              title: input.bill.title || input.merchant || "Tagihan",
-              type: input.bill.kind,
-              amount: input.bill.kind === "installment" ? (input.bill.amount ?? input.amount) : input.amount,
-              paidAmount: 0,
-              categoryId: input.categoryId,
-              walletId: input.walletId,
-              creditCardId: input.creditCardId,
-              counterparty: null,
-              frequency: input.bill.frequency,
-              dueDay: input.bill.dueDay,
-              dueDate: input.bill.dueDate,
-              lastPaidPeriod: null,
-              isActive: true,
-              ownerProfileId: input.ownerProfileId,
-              notes: "",
-            };
-            bills = [...bills, b];
-            if (input.bill.kind === "installment" && input.bill.tenor && input.bill.installmentAmount) {
-              installments = [
-                ...installments,
-                {
-                  id: nid("i"),
-                  billId,
-                  title: b.title,
-                  totalAmount: b.amount,
-                  installmentAmount: input.bill.installmentAmount,
-                  tenor: input.bill.tenor,
-                  paidCount: 0,
-                  startDate: input.occurredAt,
-                  dueDay: input.bill.dueDay ?? 1,
-                },
-              ];
-            }
-            transactions = [
-              ...transactions,
-              {
-                id,
-                type: input.type,
-                source: input.source ?? "manual",
-                amount: input.amount,
-                categoryId: input.categoryId,
-                walletId: input.walletId,
-                paymentMethod: input.paymentMethod,
-                creditCardId: input.creditCardId,
-                occurredAt: input.occurredAt,
-                merchant: input.merchant,
-                description: input.description,
-                ownerProfileId: input.ownerProfileId,
-                createdBy: state.sessionProfileId || input.ownerProfileId,
-                billId,
-                installmentId: input.bill?.kind === "installment" ? installments[installments.length - 1].id : null,
-                attachment: input.attachment,
-                items: input.items ?? [],
-                createdAt: new Date().toISOString(),
-              },
-            ];
-          } else {
-            transactions = [
-              ...transactions,
-              {
-                id,
-                type: input.type,
-                source: input.source ?? "manual",
-                amount: input.amount,
-                categoryId: input.categoryId,
-                walletId: input.walletId,
-                paymentMethod: input.paymentMethod,
-                creditCardId: input.creditCardId,
-                occurredAt: input.occurredAt,
-                merchant: input.merchant,
-                description: input.description,
-                ownerProfileId: input.ownerProfileId,
-                createdBy: state.sessionProfileId || input.ownerProfileId,
-                billId: null,
-                installmentId: null,
-                attachment: input.attachment,
-                items: input.items ?? [],
-                createdAt: new Date().toISOString(),
-              },
-            ];
-          }
-          return { ...d, transactions, bills, installments };
-        });
-        return id;
+      login: async (email, password) => {
+        const { profile } = await api.login(email, password);
+        setSessionProfileId(profile.id);
+        setActiveProfileId("all");
+        await loadDashboard();
       },
 
-      updateTransaction: (id, patch) =>
-        mutate((d) => ({
+      register: async (name, email, password) => {
+        const { profile } = await api.register(name, email, password);
+        setSessionProfileId(profile.id);
+        setActiveProfileId("all");
+        await loadDashboard();
+      },
+
+      logout: async () => {
+        try {
+          await api.logout();
+        } catch { /* abaikan */ }
+        setSessionProfileId("");
+        setActiveProfileId("all");
+        setData(emptyData());
+      },
+
+      setActiveProfile: (id) => setActiveProfileId(id),
+      toggleTheme: () => setTheme((t) => (t === "light" ? "dark" : "light")),
+      resetData: async () => {
+        await loadDashboard();
+      },
+
+      addTransaction: (input) => {
+        const tmpId = nid("t");
+        const tx: Transaction = {
+          id: tmpId,
+          type: input.type,
+          source: input.source ?? "manual",
+          amount: input.amount,
+          categoryId: input.categoryId,
+          walletId: input.walletId,
+          paymentMethod: input.paymentMethod,
+          creditCardId: input.creditCardId,
+          occurredAt: input.occurredAt,
+          merchant: input.merchant,
+          description: input.description,
+          ownerProfileId: input.ownerProfileId,
+          createdBy: sessionProfileId || input.ownerProfileId,
+          billId: null,
+          installmentId: null,
+          attachment: input.attachment,
+          items: input.items ?? [],
+          createdAt: new Date().toISOString(),
+        };
+        // Optimistic append (bill/installment menunggu refresh server).
+        setData((d) => ({ ...d, transactions: [tx, ...d.transactions] }));
+        api.createTransaction(input).then(refresh).catch((e) => fail("createTransaction", e));
+      },
+
+      updateTransaction: (id, patch) => {
+        setData((d) => ({
           ...d,
           transactions: d.transactions.map((t) => (t.id === id ? { ...t, ...patch } : t)),
-        })),
+        }));
+        api.updateTransaction(id, patch).then(refresh).catch((e) => fail("updateTransaction", e));
+      },
 
-      deleteTransaction: (id) =>
-        mutate((d) => {
-          const t = d.transactions.find((x) => x.id === id);
-          let bills = d.bills;
-          let installments = d.installments;
-          if (t?.billId) {
-            bills = bills.map((b) =>
-              b.id === t.billId
-                ? { ...b, paidAmount: Math.max(0, b.paidAmount - (t.type === "expense" ? t.amount : 0)) }
-                : b,
-            );
-          }
-          if (t?.installmentId) {
-            installments = installments.map((i) =>
-              i.id === t.installmentId ? { ...i, paidCount: Math.max(0, i.paidCount - 1) } : i,
-            );
-          }
-          return {
-            ...d,
-            transactions: d.transactions.filter((x) => x.id !== id),
-            bills,
-            installments,
-          };
-        }),
+      deleteTransaction: (id) => {
+        const prev = data.transactions;
+        setData((d) => ({ ...d, transactions: d.transactions.filter((t) => t.id !== id) }));
+        api.deleteTransaction(id).then(refresh).catch((e) => {
+          setData((d) => ({ ...d, transactions: prev }));
+          fail("deleteTransaction", e);
+        });
+      },
 
-      addWallet: (w) =>
-        mutate((d) => ({
+      addWallet: (w) => {
+        setData((d) => ({
           ...d,
           wallets: [...d.wallets, { id: nid("w"), name: w.name, scope: w.scope, ownerProfileId: w.ownerProfileId }],
-        })),
+        }));
+        api.createWallet(w).then(refresh).catch((e) => fail("addWallet", e));
+      },
 
-      addBudget: (b) =>
-        mutate((d) => ({
+      updateWallet: (id, patch) => {
+        setData((d) => ({
+          ...d,
+          wallets: d.wallets.map((w) => (w.id === id ? { ...w, ...patch } : w)),
+        }));
+        api.updateWallet(id, patch).then(refresh).catch((e) => fail("updateWallet", e));
+      },
+
+      deleteWallet: (id) => {
+        const prev = data.wallets;
+        setData((d) => ({ ...d, wallets: d.wallets.filter((w) => w.id !== id) }));
+        return api.deleteWallet(id).then(refresh).catch((e) => {
+          setData((d) => ({ ...d, wallets: prev }));
+          console.error("[store] deleteWallet:", e);
+          throw e;
+        });
+      },
+
+      transferBetweenWallets: (input) => {
+        api.transferBetweenWallets(input).then(refresh).catch((e) => fail("transferBetweenWallets", e));
+      },
+
+      addBudget: (b) => {
+        setData((d) => ({
           ...d,
           budgets: [...d.budgets, { id: nid("bg"), categoryId: b.categoryId, amount: b.amount, ownerProfileId: b.ownerProfileId }],
-        })),
+        }));
+        api.createBudget(b).then(refresh).catch((e) => fail("addBudget", e));
+      },
 
-      payBill: (billId, opts) =>
-        mutate((d) => {
-          const bill = d.bills.find((b) => b.id === billId);
-          if (!bill) return d;
-          const isStatement = bill.type === "credit_card_statement";
-          const pay = opts.full ? bill.amount - bill.paidAmount : Math.min(opts.amount, bill.amount - bill.paidAmount);
-          if (pay <= 0) return d;
-          const id = nid("t");
-          const tx: Transaction = {
-            id,
-            type: isStatement ? "credit_card_settlement" : "expense",
-            source: "manual",
-            amount: pay,
-            categoryId: bill.categoryId ?? "c-lain",
-            walletId: opts.walletId,
-            paymentMethod: opts.method,
-            creditCardId: bill.creditCardId,
-            occurredAt: todayISO(),
-            merchant: bill.title,
-            description: isStatement ? "Bayar tagihan kartu kredit" : "Pembayaran tagihan",
-            ownerProfileId: bill.ownerProfileId,
-            createdBy: state.sessionProfileId || bill.ownerProfileId,
-            billId,
-            installmentId: d.installments.find((i) => i.billId === billId)?.id ?? null,
-            attachment: null,
-            items: [],
-            createdAt: new Date().toISOString(),
-          };
-          let bills = d.bills.map((b) =>
-            b.id === billId
-              ? {
-                  ...b,
-                  paidAmount: opts.full ? b.amount : Math.min(b.amount, b.paidAmount + pay),
-                  lastPaidPeriod: b.type === "recurring" ? monthKey(todayISO()) : b.lastPaidPeriod,
-                }
-              : b,
-          );
-          let installments = d.installments;
-          if (bill.type === "installment") {
-            installments = d.installments.map((i) =>
-              i.billId === billId
-                ? {
-                    ...i,
-                    paidCount: opts.full ? i.tenor : Math.min(i.tenor, i.paidCount + 1),
-                  }
-                : i,
-            );
-          }
-          let statements = d.statements;
-          if (isStatement) {
-            statements = d.statements.map((s) =>
-              s.creditCardId === bill.creditCardId
-                ? { ...s, paidAmount: Math.min(s.statementAmount, s.paidAmount + pay) }
-                : s,
-            );
-          }
-          return { ...d, transactions: [...d.transactions, tx], bills, installments, statements };
-        }),
-
-      payStatement: (statementId, opts) =>
-        mutate((d) => {
-          const st = d.statements.find((s) => s.id === statementId);
-          if (!st) return d;
-          const id = nid("t");
-          const pay = Math.min(opts.amount, st.statementAmount - st.paidAmount);
-          const tx: Transaction = {
-            id,
-            type: "credit_card_settlement",
-            source: "manual",
-            amount: pay,
-            categoryId: "c-lain",
-            walletId: opts.walletId,
-            paymentMethod: opts.method,
-            creditCardId: st.creditCardId,
-            occurredAt: todayISO(),
-            merchant: "Tagihan Kartu Kredit",
-            description: "Bayar statement kartu kredit",
-            ownerProfileId: "p-dinar",
-            createdBy: state.sessionProfileId || "p-dinar",
-            billId: d.bills.find((b) => b.creditCardId === st.creditCardId && b.type === "credit_card_statement")?.id ?? null,
-            installmentId: null,
-            attachment: null,
-            items: [],
-            createdAt: new Date().toISOString(),
-          };
-          return {
-            ...d,
-            transactions: [...d.transactions, tx],
-            statements: d.statements.map((s) =>
-              s.id === statementId
-                ? { ...s, paidAmount: Math.min(s.statementAmount, s.paidAmount + pay) }
-                : s,
-            ),
-          };
-        }),
-
-      approveDraft: (id, patch) =>
-        mutate((d) => {
-          const dr = d.drafts.find((x) => x.id === id);
-          if (!dr) return d;
-          const merged = { ...dr, ...patch };
-          const tId = nid("t");
-          const tx: Transaction = {
-            id: tId,
-            type: merged.transactionType,
-            source: merged.source === "receipt_ocr" ? "receipt_ocr" : merged.source === "hermes" ? "hermes" : "telegram",
-            amount: merged.amount,
-            categoryId: merged.categoryId ?? "c-lain",
-            walletId: merged.walletId ?? "w-cash",
-            paymentMethod: null,
-            creditCardId: null,
-            occurredAt: merged.occurredAt ?? todayISO(),
-            merchant: merged.merchant,
-            description: merged.description,
-            ownerProfileId: merged.ownerProfileId ?? state.sessionProfileId,
-            createdBy: state.sessionProfileId,
-            billId: null,
-            installmentId: null,
-            attachment: merged.attachment,
-            items: merged.items,
-            createdAt: new Date().toISOString(),
-          };
-          return {
-            ...d,
-            transactions: [...d.transactions, tx],
-            drafts: d.drafts.map((x) =>
-              x.id === id ? { ...x, status: "approved" as const, ...patch } : x,
-            ),
-            notifications: [
-              {
-                id: nid("n"),
-                kind: "system",
-                title: "Draft disetujui",
-                body: `Transaksi "${merged.merchant}" sebesar ${merged.amount.toLocaleString("id-ID")} berhasil disimpan.`,
-                linkTo: "/transactions",
-                read: false,
-                createdAt: todayISO(),
-              },
-              ...d.notifications,
-            ],
-          };
-        }),
-
-      rejectDraft: (id) =>
-        mutate((d) => ({
+      updateBudget: (id, patch) => {
+        setData((d) => ({
           ...d,
-          drafts: d.drafts.map((x) => (x.id === id ? { ...x, status: "rejected" as const } : x)),
-        })),
+          budgets: d.budgets.map((b) => (b.id === id ? { ...b, ...patch } : b)),
+        }));
+        api.updateBudget(id, patch).then(refresh).catch((e) => fail("updateBudget", e));
+      },
 
-      markNotifRead: (id) =>
-        mutate((d) => ({
+      deleteBudget: (id) => {
+        const prev = data.budgets;
+        setData((d) => ({ ...d, budgets: d.budgets.filter((b) => b.id !== id) }));
+        api.deleteBudget(id).then(refresh).catch((e) => {
+          setData((d) => ({ ...d, budgets: prev }));
+          fail("deleteBudget", e);
+        });
+      },
+
+      updateCategory: (id, patch) => {
+        if (id === "new") {
+          api.createCategory({ name: patch.name ?? "Baru", direction: patch.direction ?? "expense" })
+            .then(refresh)
+            .catch((e) => fail("createCategory", e));
+          return;
+        }
+        setData((d) => ({
+          ...d,
+          categories: d.categories.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+        }));
+        api.updateCategory(id, patch).then(refresh).catch((e) => fail("updateCategory", e));
+      },
+
+      deleteCategory: (id) => {
+        const prev = data.categories;
+        setData((d) => ({ ...d, categories: d.categories.filter((c) => c.id !== id) }));
+        return api.deleteCategory(id).then(refresh).catch((e) => {
+          setData((d) => ({ ...d, categories: prev }));
+          console.error("[store] deleteCategory:", e);
+          throw e;
+        });
+      },
+
+      updateGroupName: (name) => {
+        if (!data.group.id) return;
+        setData((d) => ({ ...d, group: { ...d.group, name } }));
+        api.updateGroupName(data.group.id, name).then(refresh).catch((e) => fail("updateGroupName", e));
+      },
+
+      payBill: (billId, opts) => {
+        api.payBill(billId, opts).then(refresh).catch((e) => fail("payBill", e));
+      },
+
+      approveDraft: (id, patch) => {
+        api.approveDraft(id, patch).then(refresh).catch((e) => fail("approveDraft", e));
+      },
+
+      rejectDraft: (id) => {
+        api.rejectDraft(id).then(refresh).catch((e) => fail("rejectDraft", e));
+      },
+
+      deleteDraft: (id) => {
+        const prev = data.drafts;
+        setData((d) => ({ ...d, drafts: d.drafts.filter((x) => x.id !== id) }));
+        api.deleteDraft(id).then(refresh).catch((e) => {
+          setData((d) => ({ ...d, drafts: prev }));
+          fail("deleteDraft", e);
+        });
+      },
+
+      markNotifRead: (id) => {
+        setData((d) => ({
           ...d,
           notifications: d.notifications.map((n) => (n.id === id ? { ...n, read: true } : n)),
-        })),
+        }));
+        api.markNotifRead(id).catch((e) => fail("markNotifRead", e));
+      },
 
-      markNotifAllRead: () =>
-        mutate((d) => ({
+      markNotifAllRead: () => {
+        setData((d) => ({
           ...d,
           notifications: d.notifications.map((n) => ({ ...n, read: true })),
-        })),
+        }));
+        api.markNotifAllRead().catch((e) => fail("markNotifAllRead", e));
+      },
     };
-  }, [state]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, sessionProfileId, activeProfileId, theme, loading]);
 
-  return <Ctx.Provider value={api}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={apiCtx}>{children}</Ctx.Provider>;
 }
 
 export function useApp(): StoreCtx {

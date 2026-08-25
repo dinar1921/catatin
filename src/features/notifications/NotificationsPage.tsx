@@ -28,7 +28,7 @@ export function NotificationsPage() {
           <EmptyState icon={<Bell size={40} />} title="Tidak ada notifikasi" body="Tagihan jatuh tempo dan draft menunggu persetujuan akan muncul di sini." />
         </Card>
       ) : (
-        <div className="divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900">
+        <Card padded={false} className="divide-y divide-slate-100 dark:divide-slate-800">
           {data.notifications.map((n) => (
             <button
               key={n.id}
@@ -42,13 +42,13 @@ export function NotificationsPage() {
                 {n.kind === "system" && <Info size={20} className="text-ink-faint" weight="fill" />}
               </span>
               <span className="min-w-0 flex-1">
-                <span className={"block text-sm font-bold " + (n.read ? "text-ink-secondary" : "text-ink")}>{n.title}</span>
+                <span className={"block text-sm font-semibold " + (n.read ? "text-ink-secondary" : "text-ink")}>{n.title}</span>
                 <span className="mt-0.5 block text-xs text-ink-muted">{n.body}</span>
               </span>
-              {!n.read && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary-600" />}
+              {!n.read && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brand-600" />}
             </button>
           ))}
-        </div>
+        </Card>
       )}
     </div>
   );

@@ -1,29 +1,39 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { Receipt, ArrowRight } from "@phosphor-icons/react";
 import { useApp } from "../../data/store";
 import { Button, Field, Input, useToast } from "../../components/ui";
 
 export function LoginPage() {
-  const { login } = useApp();
-  const navigate = useNavigate();
+  const { login, register } = useApp();
   const toast = useToast();
   const [mode, setMode] = useState<"login" | "register">("login");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("dinar@keluarga.id");
-  const [password, setPassword] = useState("rahasia123");
+  const [password, setPassword] = useState("demo123");
+  const [submitting, setSubmitting] = useState(false);
 
-  const submit = () => {
+  const submit = async () => {
     if (!email || !password) {
       toast.push("error", "Email dan password wajib diisi");
       return;
     }
-    if (mode === "register") {
-      toast.push("success", "Akun terdaftar (mock) — lanjut sebagai Dinar");
-      login("p-dinar");
-    } else {
-      login("p-dinar");
+    if (mode === "register" && !name.trim()) {
+      toast.push("error", "Nama wajib diisi");
+      return;
     }
-    navigate("/dashboard");
+    setSubmitting(true);
+    try {
+      if (mode === "register") {
+        await register(name.trim(), email.trim(), password);
+      } else {
+        await login(email.trim(), password);
+      }
+      // GuestOnly akan redirect ke /dashboard otomatis saat session ter-set.
+    } catch (e) {
+      toast.push("error", e instanceof Error ? e.message : "Terjadi kesalahan");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -39,13 +49,13 @@ export function LoginPage() {
           <p className="mt-1 text-sm text-white/60">Catat cashflow keluarga, paham ke mana uang pergi.</p>
         </div>
 
-        <div className="rounded-2xl bg-white p-6 shadow-2xl dark:bg-white dark:bg-slate-900">
-          <div className="mb-5 grid grid-cols-2 gap-1 rounded-xl bg-ink/5 p-1 dark:bg-slate-200 dark:bg-slate-800">
+        <div className="rounded-2xl bg-white p-6 shadow-card dark:bg-slate-900">
+          <div className="mb-5 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
             <button
               onClick={() => setMode("login")}
               className={
-                "rounded-lg py-2 text-sm font-bold transition-colors " +
-                (mode === "login" ? "bg-white dark:bg-slate-900 text-ink shadow-sm" : "text-ink-muted")
+                "rounded-lg py-2 text-sm font-semibold transition-colors " +
+                (mode === "login" ? "bg-white text-ink shadow-sm dark:bg-slate-900" : "text-ink-muted")
               }
             >
               Masuk
@@ -53,8 +63,8 @@ export function LoginPage() {
             <button
               onClick={() => setMode("register")}
               className={
-                "rounded-lg py-2 text-sm font-bold transition-colors " +
-                (mode === "register" ? "bg-white dark:bg-slate-900 text-ink shadow-sm" : "text-ink-muted")
+                "rounded-lg py-2 text-sm font-semibold transition-colors " +
+                (mode === "register" ? "bg-white text-ink shadow-sm dark:bg-slate-900" : "text-ink-muted")
               }
             >
               Daftar
@@ -62,27 +72,26 @@ export function LoginPage() {
           </div>
 
           <div className="space-y-4">
-            <Field label="Email / username">
+            {mode === "register" && (
+              <Field label="Nama">
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nama kamu" />
+              </Field>
+            )}
+            <Field label="Email">
               <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="nama@email.com" />
             </Field>
             <Field label="Password">
               <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
             </Field>
-            <Button className="w-full" size="lg" onClick={submit}>
-              {mode === "login" ? "Masuk" : "Daftar"} <ArrowRight size={16} weight="bold" />
+            <Button className="w-full" size="lg" onClick={submit} disabled={submitting}>
+              {submitting ? "Memproses…" : mode === "login" ? "Masuk" : "Daftar"} <ArrowRight size={16} weight="bold" />
             </Button>
           </div>
         </div>
 
-        <div className="mt-4 flex items-center justify-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-xs text-white/70">
-          <span>Demo: masuk sebagai</span>
-          <button onClick={() => { login("p-dinar"); navigate("/dashboard"); }} className="font-bold text-white underline underline-offset-2">
-            Dinar
-          </button>
-          <span>·</span>
-          <button onClick={() => { login("p-istri"); navigate("/dashboard"); }} className="font-bold text-white underline underline-offset-2">
-            Istri
-          </button>
+        <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-3 text-center text-xs text-white/70">
+          Demo: masuk sebagai <span className="font-bold text-white">dinar@keluarga.id</span> dengan password{" "}
+          <span className="font-bold text-white">demo123</span>
         </div>
       </div>
     </div>

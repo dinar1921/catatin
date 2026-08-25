@@ -5,7 +5,7 @@ import { useApp } from "../../data/store";
 import { categoryById, memberById, walletById, billStatus } from "../../lib/derive";
 import { formatIDR, terbilang } from "../../lib/format";
 import { fmtFullDateID } from "../../lib/dates";
-import { Avatar, Badge, Button, ConfirmDialog, Field, Input, Select, Sheet, useToast } from "../../components/ui";
+import { AmountInput, Avatar, Badge, Button, ConfirmDialog, Field, Input, Select, Sheet, useToast } from "../../components/ui";
 import type { PaymentMethod, Transaction } from "../../lib/types";
 
 export function TransactionDetailSheet({
@@ -49,10 +49,10 @@ export function TransactionDetailSheet({
           editing ? null : (
             <div className="flex gap-3">
               <Button variant="secondary" className="flex-1" onClick={() => setEditing(true)}>
-                <PencilSimple size={16} /> Edit
+                <PencilSimple size={16} weight="bold" /> Edit
               </Button>
               <Button variant="danger" className="flex-1" onClick={() => setConfirmDel(true)}>
-                <Trash size={16} /> Hapus
+                <Trash size={16} weight="bold" /> Hapus
               </Button>
             </div>
           )
@@ -92,8 +92,8 @@ export function TransactionDetailSheet({
 
             {tx.merchant && (
               <div className="rounded-xl bg-canvas p-3">
-                <p className="text-sm font-bold text-ink">{tx.merchant}</p>
-                <p className="text-xs text-ink-muted">{tx.description || "Tanpa keterangan"}</p>
+                <p className="text-sm font-semibold text-ink">{tx.merchant}</p>
+                <p className="whitespace-pre-line text-xs text-ink-muted">{tx.description || "Tanpa keterangan"}</p>
               </div>
             )}
 
@@ -135,15 +135,15 @@ export function TransactionDetailSheet({
               <Link
                 to={`/bills/${bill.id}`}
                 onClick={onClose}
-                className="flex items-center justify-between rounded-xl border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-950 p-3 dark:bg-brand-50 dark:bg-brand-950/15"
+                className="flex items-center justify-between rounded-xl border border-brand-200 bg-brand-50 p-3 dark:border-brand-800 dark:bg-brand-950/15"
               >
-                <span className="flex items-center gap-2 text-sm font-semibold text-brand-800 dark:text-brand-200 dark:text-brand-200">
-                  <Paperclip size={15} />
+                <span className="flex items-center gap-2 text-sm font-semibold text-brand-700 dark:text-brand-300">
+                  <Paperclip size={15} weight="bold" />
                   {bill.title}
                   {inst && <span className="text-xs text-ink-muted">({inst.paidCount}/{inst.tenor})</span>}
                 </span>
                 <span className="flex items-center gap-1 text-xs font-semibold text-brand-700 dark:text-brand-300">
-                  {billStatusLabel(billStatus(bill))} <CaretRight size={13} />
+                  {billStatusLabel(billStatus(bill))} <CaretRight size={13} weight="bold" />
                 </span>
               </Link>
             )}
@@ -154,8 +154,7 @@ export function TransactionDetailSheet({
       <ConfirmDialog
         open={confirmDel}
         title="Hapus transaksi?"
-        body={`Transaksi "${tx.merchant || "Tanpa merchant"}" sebesar ${formatIDR(tx.amount)} akan dihapus permanen.`}
-        onConfirm={handleDelete}
+        body={`Transaksi "${tx.merchant || "Tanpa merchant"}" sebesar ${formatIDR(tx.amount)} akan dihapus permanen.`}        onConfirm={handleDelete}
         onCancel={() => setConfirmDel(false)}
       />
     </>
@@ -231,12 +230,7 @@ function EditForm({
   return (
     <div className="space-y-4">
       <Field label="Nominal">
-        <input
-          inputMode="numeric"
-          value={amount === 0 ? "" : amount.toLocaleString("id-ID")}
-          onChange={(e) => setAmount(parseInt(e.target.value.replace(/\D/g, ""), 10) || 0)}
-          className="tnum h-11 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 text-sm font-bold text-ink"
-        />
+        <AmountInput value={amount} onChange={setAmount} />
       </Field>
       <Field label="Merchant">
         <Input value={merchant} onChange={(e) => setMerchant(e.target.value)} placeholder="Toko / merchant" />

@@ -15,9 +15,11 @@ import { ApprovalsPage } from "./features/approvals/ApprovalsPage";
 import { NotificationsPage } from "./features/notifications/NotificationsPage";
 import { GroupPage, InvitePage, MembersPage, ProfilePage } from "./features/profile/ProfilePages";
 import {
+  AccountSettingsPage,
   AiOcrSettingsPage,
   ApiSettingsPage,
   CategoriesSettingsPage,
+  GroupSettingsPage,
   SettingsPage,
   TelegramSettingsPage,
   WalletsSettingsPage,
@@ -25,8 +27,17 @@ import {
 } from "./features/settings/SettingsPages";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
-  const { sessionProfileId } = useApp();
+  const { sessionProfileId, loading } = useApp();
+  if (loading) return null;
   if (!sessionProfileId) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
+/** Halaman login: redirect ke dashboard bila sudah login (hindari race). */
+function GuestOnly({ children }: { children: React.ReactNode }) {
+  const { sessionProfileId, loading } = useApp();
+  if (loading) return null;
+  if (sessionProfileId) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
 
@@ -36,7 +47,14 @@ export default function App() {
       <ToastProvider>
         <BrowserRouter>
           <Routes>
-            <Route path="/login" element={<LoginPage />} />
+            <Route
+              path="/login"
+              element={
+                <GuestOnly>
+                  <LoginPage />
+                </GuestOnly>
+              }
+            />
             <Route
               path="/*"
               element={
@@ -62,6 +80,8 @@ export default function App() {
                         <Route path="/group/members" element={<MembersPage />} />
                         <Route path="/group/invite" element={<InvitePage />} />
                         <Route path="/settings" element={<SettingsPage />} />
+                        <Route path="/settings/account" element={<AccountSettingsPage />} />
+                        <Route path="/settings/group" element={<GroupSettingsPage />} />
                         <Route path="/settings/categories" element={<CategoriesSettingsPage />} />
                         <Route path="/settings/wallets" element={<WalletsSettingsPage />} />
                         <Route path="/settings/api" element={<ApiSettingsPage />} />

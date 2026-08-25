@@ -43,7 +43,9 @@ export type TransactionSource =
   | "telegram"
   | "whatsapp"
   | "hermes"
-  | "opening_balance";
+  | "opening_balance"
+  | "transfer_out"
+  | "transfer_in";
 
 export type PaymentMethod = "Cash" | "Debit Card" | "Credit Card" | "Transfer";
 
@@ -215,4 +217,32 @@ export interface AppData {
   budgets: Budget[];
   drafts: Draft[];
   notifications: AppNotification[];
+}
+
+export interface NewBillInput {
+  kind: "regular" | "recurring" | "installment";
+  amount: number;
+  dueDay: number | null;
+  dueDate: string | null;
+  frequency: string | null;
+  tenor: number | null;
+  installmentAmount: number | null;
+  title: string;
+}
+
+export interface NewTransactionInput {
+  type: TransactionType;
+  amount: number;
+  categoryId: string;
+  walletId: string;
+  paymentMethod: PaymentMethod | null;
+  creditCardId: string | null;
+  occurredAt: string;
+  merchant: string;
+  description: string;
+  ownerProfileId: string;
+  attachment: Attachment | null;
+  items?: { itemName: string; quantity: number; unitPrice: number; totalPrice: number }[];
+  source?: Transaction["source"];
+  bill?: NewBillInput | null;
 }

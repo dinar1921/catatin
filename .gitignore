@@ -1,5 +1,11 @@
 node_modules
 dist
+server/dist
+server/server
+server/uploads
+.env
 *.local
 .DS_Store
 npm-debug.log*
+.kilo/
+.freebuff/

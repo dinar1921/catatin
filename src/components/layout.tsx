@@ -6,8 +6,8 @@ import {
   ArrowsLeftRight,
   Receipt,
   Wallet as WalletIcon,
-  Scales,
-  ChartPie,
+  CurrencyCircleDollar,
+  ChartBar,
   CheckSquare,
   UserCircle,
   GearSix,
@@ -25,7 +25,7 @@ import {
 } from "@phosphor-icons/react";
 import { useApp } from "../data/store";
 import { memberById } from "../lib/derive";
-import { Avatar, Button, Card, cn, ConfirmDialog, Dropdown, EmptyState, Sheet } from "./ui";
+import { Avatar, Button, Card, cn, Dropdown, EmptyState, Sheet } from "./ui";
 import type { FilterState } from "../lib/types";
 import { fmtPeriodLabel, todayISO } from "../lib/dates";
 
@@ -84,8 +84,8 @@ const navMain = [
   { to: "/transactions", label: "Transaksi", icon: ArrowsLeftRight },
   { to: "/bills", label: "Tagihan", icon: Receipt },
   { to: "/wallets", label: "Wallet", icon: WalletIcon },
-  { to: "/budget", label: "Budget", icon: Scales },
-  { to: "/reports", label: "Laporan", icon: ChartPie },
+  { to: "/budget", label: "Budget", icon: CurrencyCircleDollar },
+  { to: "/reports", label: "Laporan", icon: ChartBar },
   { to: "/approvals", label: "Persetujuan", icon: CheckSquare },
 ];
 
@@ -137,6 +137,7 @@ function Sidebar() {
         <div className="my-3 border-t border-slate-100 dark:border-slate-800" />
         <NavItem to="/profile" icon={UserCircle} label="Profile" />
         <NavItem to="/settings" icon={GearSix} label="Settings" />
+        <NavItem to="/add?mode=manual" icon={Plus} label="Tambah Transaksi" />
       </nav>
 
       {/* User footer */}
@@ -171,12 +172,12 @@ function TabLink({ tab }: { tab: { to: string; label: string; icon: React.Elemen
       to={tab.to}
       className={({ isActive }) =>
         cn(
-          "flex flex-col items-center justify-center gap-1 py-2 text-[10px] font-semibold transition-colors",
+          "flex flex-col items-center justify-center gap-1 py-2.5 text-[11px] font-semibold transition-colors",
           isActive ? "text-brand-600" : "text-ink-muted hover:text-ink",
         )
       }
     >
-      <tab.icon size={20} weight="duotone" />
+      <tab.icon size={22} weight="duotone" />
       <span>{tab.label}</span>
     </NavLink>
   );
@@ -188,7 +189,7 @@ function MobileNav() {
   const tabs = [
     { to: "/dashboard", label: "Beranda", icon: House },
     { to: "/transactions", label: "Transaksi", icon: ArrowsLeftRight },
-    { to: "/reports", label: "Laporan", icon: ChartPie },
+    { to: "/reports", label: "Laporan", icon: ChartBar },
     { to: "/settings", label: "Setting", icon: GearSix },
   ];
 
@@ -203,9 +204,9 @@ function MobileNav() {
             <button
               onClick={() => setAddOpen(true)}
               aria-label="Tambah transaksi"
-              className="absolute -top-5 flex h-12 w-12 items-center justify-center rounded-full bg-brand-600 text-white shadow-fab ring-4 ring-white transition-transform active:scale-95 dark:ring-slate-900"
+              className="absolute -top-4 flex h-14 w-14 items-center justify-center rounded-full bg-brand-600 text-white shadow-fab ring-2 ring-white transition-transform active:scale-95 dark:ring-slate-900"
             >
-              <Plus size={24} weight="bold" />
+              <Plus size={26} weight="bold" />
             </button>
           </div>
           {tabs.slice(2).map((t) => (
@@ -260,14 +261,13 @@ function MobileNav() {
 /* ================================================================== */
 function MobileMenu() {
   const [open, setOpen] = useState(false);
-  const [confirmLogout, setConfirmLogout] = useState(false);
-  const { theme, toggleTheme, sessionProfileId, data, logout } = useApp();
+  const { theme, toggleTheme, sessionProfileId, data } = useApp();
   const me = memberById(data, sessionProfileId);
 
   const items = [
     { to: "/bills", label: "Tagihan", icon: Receipt },
     { to: "/wallets", label: "Wallet", icon: WalletIcon },
-    { to: "/budget", label: "Budget", icon: Scales },
+    { to: "/budget", label: "Budget", icon: CurrencyCircleDollar },
     { to: "/approvals", label: "Persetujuan", icon: CheckSquare },
     { to: "/profile", label: "Profile", icon: UserCircle },
   ];
@@ -360,7 +360,7 @@ function MobileMenu() {
               ))}
             </nav>
 
-            {/* Footer — user, theme toggle, logout */}
+            {/* Footer — user, theme toggle */}
             <div className="border-t border-slate-100 p-3 dark:border-slate-800">
               <div className="flex items-center gap-2.5 rounded-xl px-2 py-2">
                 {me && <Avatar name={me.name} color={me.color} size={32} />}
@@ -377,31 +377,12 @@ function MobileMenu() {
                 >
                   {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
                 </button>
-                <button
-                  onClick={() => setConfirmLogout(true)}
-                  aria-label="Keluar"
-                  className="rounded-lg p-2 text-ink-muted hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950"
-                >
-                  <X size={18} />
-                </button>
               </div>
             </div>
           </aside>
         </div>,
         document.body,
       )}
-
-      <ConfirmDialog
-        open={confirmLogout}
-        title="Keluar dari Catatin?"
-        body="Kamu harus masuk kembali untuk melihat data Catatin."
-        confirmLabel="Keluar"
-        onConfirm={() => {
-          setConfirmLogout(false);
-          logout();
-        }}
-        onCancel={() => setConfirmLogout(false)}
-      />
     </>
   );
 }
@@ -787,7 +768,7 @@ export function PageHeader({
     <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-ink">{title}</h1>
-        {subtitle && <p className="mt-1 text-sm text-ink-muted">{subtitle}</p>}
+        {subtitle && <p className="tnum mt-1 text-sm text-ink-muted">{subtitle}</p>}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
     </div>
