@@ -35,6 +35,8 @@ export function ScanReceiptPage() {
   const [categoryId, setCategoryId] = useState("c-belanja");
   const [walletId, setWalletId] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
+  const [isHeuristic, setIsHeuristic] = useState(true);
+  const [validationMessages, setValidationMessages] = useState<string[]>([]);
   const uncertain = useRef<string[]>(["walletId", "paymentMethod"]);
 
   const onFile = (f: File | undefined) => {
@@ -67,6 +69,8 @@ export function ScanReceiptPage() {
       setCategoryId("");
       setWalletId("");
       setPaymentMethod("");
+      setIsHeuristic(!ext.merchant || ext.merchant === "Merchant Contoh");
+      setValidationMessages(ext.validationMessages ?? []);
       uncertain.current = [...(ext.uncertainFields ?? []), "categoryId", "walletId"];
       setStep("review");
     } catch (e) {
@@ -128,7 +132,7 @@ export function ScanReceiptPage() {
             </button>
           ) : (
             <Card padded={false}>
-              <img src={attachment.dataUrl} alt={attachment.fileName} className="max-h-[420px] w-full bg-canvas object-contain" />
+              <img src={attachment.dataUrl} alt={attachment.fileName} className="mx-auto max-h-[420px] max-w-full bg-canvas object-contain" />
               <div className="flex items-center justify-between border-t border-slate-200/80 dark:border-slate-800 px-3 py-2">
                 <span className="truncate text-xs font-medium text-ink-muted">{attachment.fileName}</span>
                 <div className="flex gap-2">
@@ -179,9 +183,17 @@ export function ScanReceiptPage() {
                 <Badge variant="income">Ekstraksi selesai</Badge>
                 <span className="text-xs text-ink-faint">Field yang diragukan ditandai</span>
               </div>
-              <div className="rounded-xl bg-canvas p-3 text-xs text-ink-muted">
-                AI (mode heuristic) belum membaca isi struk secara otomatis. Periksa & isi data di bawah, lalu setujui.
-              </div>
+              {isHeuristic ? (
+                <div className="rounded-xl bg-amber-50 p-3 text-xs text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                  {validationMessages.length > 0
+                    ? validationMessages.map((m) => <p key={m}>{m}</p>)
+                    : <p>AI (mode heuristic) belum membaca isi struk secara otomatis. Periksa & isi data di bawah, lalu setujui.</p>}
+                </div>
+              ) : (
+                <div className="rounded-xl bg-emerald-50 p-3 text-xs text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                  AI membaca struk secara otomatis. Periksa data yang masih kosong, lalu setujui.
+                </div>
+              )}
               {uploadError && (
                 <div className="space-y-3 rounded-xl border border-rose-200 bg-rose-50 p-3 dark:border-rose-900 dark:bg-rose-950">
                   <div className="flex items-start gap-2">

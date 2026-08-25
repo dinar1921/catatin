@@ -89,6 +89,14 @@ export function getDashboard(): Promise<AppData> {
   return request<AppData>("GET", "/dashboard");
 }
 
+export function getInsight(params: { from?: string; to?: string; profileId?: string }): Promise<{ text: string | null; recommendation: string | null }> {
+  const qs = new URLSearchParams();
+  if (params.from) qs.set("from", params.from);
+  if (params.to) qs.set("to", params.to);
+  if (params.profileId && params.profileId !== "all") qs.set("profileId", params.profileId);
+  return request("GET", `/dashboard/insight?${qs.toString()}`);
+}
+
 export function getTransactions(params?: Record<string, string | undefined>): Promise<{ transactions: unknown[] }> {
   const qs = params
     ? "?" +

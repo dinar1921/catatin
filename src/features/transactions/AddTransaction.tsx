@@ -317,7 +317,7 @@ function ManualForm() {
           </button>
         ) : (
           <div className="overflow-hidden rounded-xl border border-slate-200/80 dark:border-slate-800">
-            <img src={attachment.dataUrl} alt={attachment.fileName} className="max-h-56 w-full object-contain bg-canvas" />
+            <img src={attachment.dataUrl} alt={attachment.fileName} className="mx-auto max-h-56 max-w-full bg-canvas object-contain" />
             <div className="flex items-center justify-between border-t border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2">
               <span className="truncate text-xs font-medium text-ink-muted">{attachment.fileName}</span>
               <div className="flex gap-2">

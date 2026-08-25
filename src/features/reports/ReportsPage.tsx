@@ -36,14 +36,14 @@ import { formatIDR } from "../../lib/format";
 import { fmtPeriodLabel, periodRange } from "../../lib/dates";
 import { exportReport } from "../../lib/api";
 import { Badge, Button, Card, CardHeader, ProgressBar, useToast } from "../../components/ui";
-import { FilterChip, PageHeader, useFilter as useFilterCtx } from "../../components/layout";
+import { PageHeader, useFilter as useFilterCtx } from "../../components/layout";
 import { TransactionDetailSheet } from "../transactions/TransactionDetail";
 import { billIcon, billMetaLine, billRowStatus } from "../bills/BillsPage";
 import type { AppData, Bill, Transaction } from "../../lib/types";
 
 export function ReportsPage() {
   const { data, activeProfileId } = useApp();
-  const { filter, openFilter } = useFilterCtx();
+  const { filter } = useFilterCtx();
   const toast = useToast();
   const [detailId, setDetailId] = useState<string | null>(null);
 
@@ -128,7 +128,6 @@ export function ReportsPage() {
             </>
           }
         />
-        <FilterChip filter={filter} onClick={openFilter} />
       </div>
 
       {/* KPI strip — hairline 2×2 → 4-across */}

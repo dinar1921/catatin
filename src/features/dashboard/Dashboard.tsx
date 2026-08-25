@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   CaretRight,
@@ -31,10 +31,11 @@ import {
   walletById,
 } from "../../lib/derive";
 import { formatIDR } from "../../lib/format";
-import { dueLabel } from "../../lib/dates";
+import { dueLabel, periodRange } from "../../lib/dates";
 import { Badge, Card, CardHeader, ProgressBar } from "../../components/ui";
 import { FilterChip, useFilter as useFilterCtx } from "../../components/layout";
 import { TransactionDetailSheet } from "../transactions/TransactionDetail";
+import { getInsight } from "../../lib/api";
 
 export function DashboardPage() {
   const { data, activeProfileId, sessionProfileId } = useApp();
@@ -42,6 +43,17 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const [detailId, setDetailId] = useState<string | null>(null);
   const [showInsight, setShowInsight] = useState(false);
+  const [ai, setAi] = useState<{ text: string | null; recommendation: string | null }>({ text: null, recommendation: null });
+
+  // Fetch AI insight saat filter berubah (pakai heuristic fallback bila gagal / tidak dikonfigurasi).
+  useEffect(() => {
+    let cancelled = false;
+    const { start, end } = periodRange(filter.period);
+    getInsight({ from: start, to: end, profileId: activeProfileId })
+      .then((r) => { if (!cancelled) setAi(r); })
+      .catch(() => { if (!cancelled) setAi({ text: null, recommendation: null }); });
+    return () => { cancelled = true; };
+  }, [filter, activeProfileId]);
 
   const me = memberById(data, sessionProfileId);
   const ts = useMemo(
@@ -199,35 +211,39 @@ export function DashboardPage() {
             <p className="py-6 text-center text-sm text-ink-muted">Tidak ada tagihan bulan ini.</p>
           ) : (
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {bills.map((b) => (
-                <button
-                  key={b.id}
-                  onClick={() => navigate(`/bills/${b.id}`)}
-                  className="flex w-full items-center gap-3 py-3 text-left"
-                >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-xs font-semibold text-brand-700 dark:bg-brand-950 dark:text-brand-300">
-                    {b.dueDay}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-ink">{b.title}</span>
-                    <span className="block text-xs text-ink-muted">
-                      {dueLabel(b.dueDay, b.dueDate)}
-                      {(() => {
-                        const inst = data.installments.find((i) => i.billId === b.id);
-                        return inst ? ` · ${inst.paidCount}/${inst.tenor}` : "";
-                      })()}
+              {bills.map((b) => {
+                // Angka tanggal: prioritas dueDay, fallback dari dueDate (hutang/piutang hanya punya dueDate).
+                const day = b.dueDay ?? (b.dueDate ? Number(b.dueDate.slice(8, 10)) : null);
+                return (
+                  <button
+                    key={b.id}
+                    onClick={() => navigate(`/bills/${b.id}`)}
+                    className="flex w-full items-center gap-3 py-3 text-left"
+                  >
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-xs font-semibold text-brand-700 dark:bg-brand-950 dark:text-brand-300">
+                      {day ?? "–"}
                     </span>
-                  </span>
-                  <div className="text-right">
-                    <Badge variant={b.type === "installment" ? "warning" : "neutral"}>
-                      {b.type === "installment" ? "Cicilan" : "Rutin"}
-                    </Badge>
-                    <p className="tnum mt-1 text-sm font-semibold text-ink">
-                      {formatIDR(b.amount - b.paidAmount)}
-                    </p>
-                  </div>
-                </button>
-              ))}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-ink">{b.title}</span>
+                      <span className="block text-xs text-ink-muted">
+                        {dueLabel(b.dueDay, b.dueDate)}
+                        {(() => {
+                          const inst = data.installments.find((i) => i.billId === b.id);
+                          return inst ? ` · ${inst.paidCount}/${inst.tenor}` : "";
+                        })()}
+                      </span>
+                    </span>
+                    <div className="text-right">
+                      <Badge variant={b.type === "installment" ? "warning" : "neutral"}>
+                        {b.type === "installment" ? "Cicilan" : "Rutin"}
+                      </Badge>
+                      <p className="tnum mt-1 text-sm font-semibold text-ink">
+                        {formatIDR(b.amount - b.paidAmount)}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
         </Card>
@@ -245,7 +261,7 @@ export function DashboardPage() {
             </span>
           </div>
           <h3 className="mt-3 text-base font-bold text-ink">Ringkasan pengeluaran</h3>
-          <p className="mt-1 text-sm leading-relaxed text-ink-secondary">{insightSentence}</p>
+          <p className="mt-1 text-sm leading-relaxed text-ink-secondary">{ai.text || insightSentence}</p>
 
           <button
             onClick={() => setShowInsight(!showInsight)}
@@ -290,7 +306,7 @@ export function DashboardPage() {
             <ListChecks size={15} weight="duotone" /> Rekomendasi
           </p>
           <p className="mt-1 text-sm font-semibold text-ink">Tips keuangan</p>
-          <p className="mt-0.5 text-sm text-ink-secondary">{recommendation}</p>
+          <p className="mt-0.5 text-sm text-ink-secondary">{ai.recommendation || recommendation}</p>
         </div>
       </div>
 

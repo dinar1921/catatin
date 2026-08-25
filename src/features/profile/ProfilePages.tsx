@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Users, UserPlus, CaretRight, Envelope, SignOut, Check, Trash } from "@phosphor-icons/react";
+import { ArrowLeft, Users, UserPlus, CaretRight, SignOut, Check, Trash, GearSix } from "@phosphor-icons/react";
 import { useApp } from "../../data/store";
 import { memberById } from "../../lib/derive";
 import { Avatar, Badge, Button, Card, ConfirmDialog, Field, Input, Select, useToast } from "../../components/ui";
@@ -30,7 +30,7 @@ export function ProfilePage() {
         <MenuLink to="/group" icon={<Users size={18} weight="bold" />} label="Keluarga / Group" sub={data.group.name} />
         <MenuLink to="/group/members" icon={<Users size={18} weight="bold" />} label="Anggota" sub={`${data.members.length} orang`} />
         <MenuLink to="/group/invite" icon={<UserPlus size={18} weight="bold" />} label="Undang Anggota" />
-        <MenuLink to="/settings" icon={<Envelope size={18} weight="bold" />} label="Pengaturan" />
+        <MenuLink to="/settings" icon={<GearSix size={18} weight="bold" />} label="Pengaturan" />
         <button
           onClick={() => setConfirmLogout(true)}
           className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-rose-50/60 dark:hover:bg-rose-950/40"

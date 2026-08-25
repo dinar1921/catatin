@@ -6,7 +6,7 @@ import {
   CaretRight,
   CalendarBlank,
   CalendarCheck,
-  Repeat,
+  Infinity,
   HandCoins,
   CreditCard as CreditCardIcon,
   Check,
@@ -78,7 +78,7 @@ export function billRowStatus(s: ReturnType<typeof billStatus>): { label: string
 export function billIcon(b: Bill, size = 20): React.ReactNode {
   switch (b.type) {
     case "recurring":
-      return <Repeat size={size} weight="duotone" />;
+      return <Infinity size={size} weight="duotone" />;
     case "installment":
       return <CalendarCheck size={size} weight="duotone" />;
     case "debt":

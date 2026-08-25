@@ -445,7 +445,7 @@ export function Sheet({
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
     >
@@ -454,10 +454,8 @@ export function Sheet({
         onClick={dismissable ? onClose : undefined}
       />
       <div className={cn(
-        "relative flex w-full flex-col overflow-hidden bg-white shadow-xl dark:bg-slate-900",
-        fullScreen
-          ? "h-full"
-          : "max-h-[88dvh] rounded-t-2xl sm:mx-auto sm:max-w-md sm:rounded-2xl"
+        "relative flex w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-slate-900",
+        fullScreen ? "h-[88dvh]" : "max-h-[88dvh]"
       )}>
         {title && (
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">

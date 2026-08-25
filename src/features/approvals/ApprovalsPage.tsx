@@ -253,7 +253,7 @@ function DraftDetail({
             )}
 
             {draft.attachment && (
-              <img src={draft.attachment.dataUrl} alt={draft.attachment.fileName} className="max-h-44 w-full rounded-xl border border-slate-200/80 dark:border-slate-800 object-contain" />
+              <img src={draft.attachment.dataUrl} alt={draft.attachment.fileName} className="mx-auto max-h-44 max-w-full rounded-xl border border-slate-200/80 bg-canvas object-contain dark:border-slate-800" />
             )}
 
             <button onClick={() => setEditing(true)} className="flex items-center gap-1.5 text-sm font-semibold text-brand-700 dark:text-brand-300">

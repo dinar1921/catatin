@@ -127,7 +127,7 @@ export function TransactionDetailSheet({
             {tx.attachment && (
               <div>
                 <p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Foto struk</p>
-                <img src={tx.attachment.dataUrl} alt={tx.attachment.fileName} className="max-h-52 w-full rounded-xl border border-slate-200/80 dark:border-slate-800 object-contain" />
+                <img src={tx.attachment.dataUrl} alt={tx.attachment.fileName} className="mx-auto max-h-52 max-w-full rounded-xl border border-slate-200/80 bg-canvas object-contain dark:border-slate-800" />
               </div>
             )}
 

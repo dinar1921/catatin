@@ -199,7 +199,9 @@ If uncertain about a field, set it to null. If image is not a receipt, set merch
     const raw = json?.choices?.[0]?.message?.content?.trim();
     if (!raw) return fallback("Respons kosong dari AI");
 
-    const parsed = JSON.parse(raw) as {
+    // Toleransi markdown code-fence & teks di sekitar JSON (model sering membungkusnya).
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+    const parsed = JSON.parse(cleaned) as {
       merchant?: string | null;
       total?: number | null;
       date?: string | null;
@@ -369,5 +371,64 @@ Pesan user: "${text}"`;
   } catch (e) {
     console.warn("[ai] parse chat failed:", e instanceof Error ? e.message : e);
     return fallback;
+  }
+}
+
+/* ================================================================== */
+/*  AI Insight (dashboard/laporan) — insight role                       */
+/* ================================================================== */
+
+export interface AiInsight {
+  text: string;
+  recommendation: string;
+}
+
+/** Generate satu insight + rekomendasi memakai AI (insight role); null bila tidak dikonfigurasi. */
+export async function generateInsight(
+  summary: string,
+  config: AiConfig,
+  apiKey: string | null,
+): Promise<AiInsight | null> {
+  const role = config.roles.insight ?? config.roles.agent ?? defaultRole();
+  if (role.provider === "heuristic" || !apiKey) return null;
+
+  const baseUrl = (role.customBaseUrl?.trim() || "https://api.openai.com/v1").replace(/\/+$/, "");
+  const model = role.model || "gpt-4o-mini";
+  const timeoutMs = role.timeoutMs ?? 30000;
+
+  const prompt = `Kamu adalah analis keuangan keluarga "Catatin" (bahasa Indonesia). Berdasarkan data berikut, buat:
+1) SATU insight singkat (maks 2 kalimat, natural, bahasa Indonesia) tentang pengeluaran keluarga.
+2) SATU rekomendasi singkat (1 kalimat) untuk memperbaiki kondisi.
+Balas HANYA JSON (tanpa markdown): {"insight":"...","recommendation":"..."}
+
+Data:
+${summary}`;
+
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "system", content: prompt }],
+        max_tokens: 300,
+        temperature: role.temperature ?? 0.5,
+      }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const json = await res.json() as { choices?: { message?: { content?: string } }[] };
+    const raw = json?.choices?.[0]?.message?.content?.trim();
+    if (!raw) return null;
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+    const parsed = JSON.parse(cleaned) as { insight?: string; recommendation?: string };
+    if (!parsed.insight) return null;
+    return { text: parsed.insight, recommendation: parsed.recommendation ?? "" };
+  } catch (e) {
+    console.warn("[ai] insight failed:", e instanceof Error ? e.message : e);
+    return null;
   }
 }
