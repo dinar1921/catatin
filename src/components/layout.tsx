@@ -119,9 +119,7 @@ function Sidebar() {
       {/* Logo */}
       <div className="px-5 pb-4 pt-6">
         <div className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600">
-            <Receipt size={18} weight="fill" className="text-white" />
-          </span>
+          <img src="/logo-catatin.png" alt="Logo Catatin" className="h-8 w-8 rounded-lg object-cover" />
           <span className="text-lg font-extrabold tracking-tight text-ink">
             Cata<span className="text-brand-600">tin</span>
           </span>
@@ -319,9 +317,7 @@ function MobileMenu() {
             {/* Header — logo + group + close */}
             <div className="flex items-center justify-between border-b border-slate-100 px-5 pb-4 pt-6 dark:border-slate-800">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600">
-                  <Receipt size={18} weight="fill" className="text-white" />
-                </span>
+                <img src="/logo-catatin.png" alt="Logo Catatin" className="h-8 w-8 rounded-lg object-cover" />
                 <div>
                   <span className="text-lg font-extrabold tracking-tight text-ink">
                     Cata<span className="text-brand-600">tin</span>

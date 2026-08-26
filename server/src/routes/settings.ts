@@ -123,8 +123,14 @@ router.post("/ai/test", requireAdmin, async (req: Request, res: Response) => {
     return;
   }
   const cred = getCredentials(req.groupId!);
+  // Fallback ke konfigurasi tersimpan bila field tidak dikirim (base URL & model),
+  // agar "test koneksi" konsisten dengan konfigurasi yang aktif.
+  const cfg = getAiSettings(req.groupId!);
+  const matchRole = Object.values(cfg.roles).find((rl) => rl.provider === parsed.data.provider);
   const input = {
     ...parsed.data,
+    model: parsed.data.model || matchRole?.model,
+    customBaseUrl: parsed.data.customBaseUrl || matchRole?.customBaseUrl,
     apiKey: parsed.data.apiKey || cred?.apiKey || "",
   };
   const result = await testConnection(input);

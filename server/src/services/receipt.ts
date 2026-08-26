@@ -31,12 +31,14 @@ function fmtIDR(n: number): string {
   return "Rp" + new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(Math.round(n));
 }
 
-/** Deskripsi dari hasil ekstraksi: rincian item struk + metode bayar (bukan hanya total). */
+/** Deskripsi dari hasil ekstraksi: fakta struk (invoice/kasir/…), rincian item, lalu metode bayar. */
 function buildReceiptDescription(ext: ExtractedReceipt): string {
   const lines: string[] = [];
+  for (const d of ext.details) lines.push(d);
   if (ext.items.length > 0) {
     lines.push(ext.items.map((i) => `${i.itemName} x${i.quantity} @${fmtIDR(i.unitPrice)}`).join("\n"));
   }
+  if (ext.paymentDetail) lines.push(`Bayar: ${ext.paymentDetail}`);
   if (ext.paymentMethod) lines.push(`Metode: ${ext.paymentMethod}`);
   return lines.join("\n") || "Hasil scan struk";
 }

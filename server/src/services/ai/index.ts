@@ -15,6 +15,10 @@ export interface ExtractedReceipt {
   occurredAt: string | null;
   items: ReceiptItemExtracted[];
   paymentMethod: string | null;
+  /** Fakta tambahan dari struk (invoice, tanggal+jam, kasir, CS, dll). */
+  details: string[];
+  /** Info pembayaran tambahan, mis. "EDC BCA (kartu) Rp50.000". */
+  paymentDetail: string | null;
   uncertainFields: string[];
   validationMessages: string[];
   inReview: boolean;
@@ -133,6 +137,8 @@ export function getProvider(config: AiConfig, apiKey: string | null) {
       occurredAt: new Date().toISOString().slice(0, 10),
       items: [],
       paymentMethod: null,
+      details: [],
+      paymentDetail: null,
       uncertainFields: ["merchant", "amount", "categoryId"],
       validationMessages: [],
       inReview: true,
@@ -154,8 +160,13 @@ async function extractViaOpenAiCompatible(
   "merchant": "string (nama toko/merchant)",
   "total": "number (total nominal, angka tanpa Rp/koma)",
   "date": "string (YYYY-MM-DD)",
+  "time": "string | null (jam transaksi HH:mm:ss bila terlihat)",
+  "invoice": "string | null (nomor invoice/nota/transaksi bila ada)",
+  "cashier": "string | null (nama kasir bila ada)",
   "items": [{"name": "string", "qty": "number", "price": "number"}],
-  "payment_method": "string | null (metode bayar jika terlihat)"
+  "payment_method": "string | null (metode bayar jika terlihat)",
+  "payment_detail": "string | null (detail pembayaran, mis: EDC BCA (kartu) Rp50.000)",
+  "details": ["string"] (fakta penting lain dari struk yang tidak masuk field lain, mis: nomor CS, nomor pelanggan, poin, produk non-item seperti BBM/liter)
 }
 If uncertain about a field, set it to null. If image is not a receipt, set merchant to null.`;
 
@@ -177,6 +188,7 @@ If uncertain about a field, set it to null. If image is not a receipt, set merch
       ],
       max_tokens: 1000,
       temperature: role.temperature ?? 0.1,
+      stream: false,
     };
 
     const res = await fetch(`${baseUrl}/chat/completions`, {
@@ -205,18 +217,44 @@ If uncertain about a field, set it to null. If image is not a receipt, set merch
       merchant?: string | null;
       total?: number | null;
       date?: string | null;
+      time?: string | null;
+      invoice?: string | null;
+      cashier?: string | null;
       items?: { name?: string; qty?: number; price?: number }[];
       payment_method?: string | null;
+      payment_detail?: string | null;
+      details?: unknown;
     };
 
     const uncertainFields: string[] = [];
     const merchant = parsed.merchant ?? "";
     if (!merchant) uncertainFields.push("merchant");
-    const amount = typeof parsed.total === "number" && parsed.total > 0 ? parsed.total : 0;
+    // Model kadang mengembalikan angka sebagai string ("37500" / "Rp37.500") — toleransi.
+    const rawTotal = typeof parsed.total === "number"
+      ? parsed.total
+      : Number(String(parsed.total ?? "").replace(/[^\d]/g, ""));
+    const amount = Number.isFinite(rawTotal) && rawTotal > 0 ? Math.round(rawTotal) : 0;
     if (amount <= 0) uncertainFields.push("amount");
     const occurredAt = isValidDate(parsed.date) ? parsed.date! : null;
     if (!occurredAt) uncertainFields.push("occurredAt");
     const paymentMethod = parsed.payment_method ?? null;
+
+    const str = (v: unknown): string => (typeof v === "string" && v.trim() ? v.trim() : "");
+    const time = str(parsed.time);
+    const invoice = str(parsed.invoice);
+    const cashier = str(parsed.cashier);
+    const paymentDetail = str(parsed.payment_detail);
+    const extraDetails = Array.isArray(parsed.details)
+      ? (parsed.details as unknown[]).map((d) => String(d).replace(/^-\s*/, "").trim()).filter(Boolean)
+      : [];
+
+    // Susun detail terbaca: invoice → tanggal+jam → kasir → fakta lain.
+    const details: string[] = [];
+    if (invoice) details.push(`Invoice: ${invoice}`);
+    if (occurredAt || time) details.push(`Tanggal: ${occurredAt ?? ""}${time ? (occurredAt ? " " : "") + time : ""}`.trim());
+    if (cashier) details.push(`Kasir: ${cashier}`);
+    for (const d of extraDetails) details.push(d);
+
     const items = Array.isArray(parsed.items) ? parsed.items.map((i) => ({
       itemName: i.name ?? "",
       quantity: i.qty ?? 1,
@@ -232,6 +270,8 @@ If uncertain about a field, set it to null. If image is not a receipt, set merch
       occurredAt,
       items,
       paymentMethod,
+      details,
+      paymentDetail: paymentDetail || null,
       uncertainFields,
       validationMessages: amount <= 0 ? ["Nominal tidak terdeteksi, periksa manual"] : [],
       inReview: uncertainFields.length > 0,
@@ -251,6 +291,8 @@ function fallback(reason: string): ExtractedReceipt {
     occurredAt: new Date().toISOString().slice(0, 10),
     items: [],
     paymentMethod: null,
+    details: [],
+    paymentDetail: null,
     uncertainFields: ["merchant", "amount", "categoryId"],
     validationMessages: [reason],
     inReview: true,
@@ -343,6 +385,7 @@ Pesan user: "${text}"`;
         messages: [{ role: "system", content: prompt }],
         max_tokens: 500,
         temperature: role.temperature ?? 0.1,
+        stream: false,
       }),
       signal: ctrl.signal,
     });
@@ -415,6 +458,7 @@ ${summary}`;
         messages: [{ role: "system", content: prompt }],
         max_tokens: 300,
         temperature: role.temperature ?? 0.5,
+        stream: false,
       }),
       signal: ctrl.signal,
     });

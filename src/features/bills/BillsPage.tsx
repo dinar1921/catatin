@@ -11,14 +11,17 @@ import {
   CreditCard as CreditCardIcon,
   Check,
   Lightning,
+  Plus,
+  PencilSimple,
+  Trash,
 } from "@phosphor-icons/react";
 import { useApp } from "../../data/store";
 import { billStatus, categoryById, memberById, walletVisible } from "../../lib/derive";
 import { formatIDR } from "../../lib/format";
 import { dueLabel, fmtDateID, fmtDayMonth } from "../../lib/dates";
-import { AmountInput, Badge, Button, Card, EmptyState, Field, Pagination, ProgressBar, Select, Sheet, usePagination, useToast } from "../../components/ui";
+import { AmountInput, Badge, Button, Card, ConfirmDialog, EmptyState, Field, Input, Pagination, ProgressBar, Select, Sheet, usePagination, useToast } from "../../components/ui";
 import { PageHeader } from "../../components/layout";
-import type { Bill, BillType, Installment, PaymentMethod } from "../../lib/types";
+import type { Bill, BillType, CreditCard, Installment, PaymentMethod } from "../../lib/types";
 
 type TabId = "all" | "regular" | "recurring" | "debt_installment" | "cc";
 
@@ -150,6 +153,8 @@ export function BillsPage() {
         ))}
       </div>
 
+      {tab === "cc" && <CreditCardsSection />}
+
       {shown.length === 0 ? (
         <Card className="mt-4">
           <EmptyState icon={<Receipt size={40} />} title="Tidak ada tagihan" body="Tagihan dibuat lewat form transaksi saat memilih 'Kaitkan tagihan?'." />
@@ -195,6 +200,174 @@ function SummaryCard({ label, value, sub, tone }: { label: string; value: string
       <p className="text-xs font-semibold text-ink-muted">{label}</p>
       <p className={"tnum mt-1 text-lg font-bold tracking-tight " + toneCls}>{value}</p>
       <p className="tnum text-xs text-ink-faint">{sub}</p>
+    </Card>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Manajemen kartu kredit — tab "Kartu Kredit" (PRD §6.12, §29.4)      */
+/* ------------------------------------------------------------------ */
+function CreditCardsSection() {
+  const { data, addCreditCard, updateCreditCard, deleteCreditCard } = useApp();
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<CreditCard | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [issuer, setIssuer] = useState("");
+  const [lastFour, setLastFour] = useState("");
+  const [statementDay, setStatementDay] = useState(5);
+  const [dueDay, setDueDay] = useState(25);
+  const [creditLimit, setCreditLimit] = useState(0);
+
+  const openAdd = () => {
+    setEditing(null);
+    setName(""); setIssuer(""); setLastFour("");
+    setStatementDay(5); setDueDay(25); setCreditLimit(0);
+    setOpen(true);
+  };
+
+  const openEdit = (c: CreditCard) => {
+    setEditing(c);
+    setName(c.name); setIssuer(c.issuer); setLastFour(c.lastFour);
+    setStatementDay(c.statementDay); setDueDay(c.dueDay); setCreditLimit(c.creditLimit);
+    setOpen(true);
+  };
+
+  const save = () => {
+    if (!name.trim()) {
+      toast.push("error", "Nama kartu wajib diisi");
+      return;
+    }
+    const input = {
+      name: name.trim(),
+      issuer: issuer.trim(),
+      lastFour: lastFour.trim(),
+      statementDay,
+      dueDay,
+      creditLimit,
+    };
+    if (editing) {
+      updateCreditCard(editing.id, input);
+      toast.push("success", "Kartu kredit diperbarui");
+    } else {
+      addCreditCard(input);
+      toast.push("success", "Kartu kredit ditambahkan");
+    }
+    setOpen(false);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await deleteCreditCard(deleteTarget);
+      toast.push("success", "Kartu kredit dihapus");
+    } catch (e) {
+      toast.push("error", e instanceof Error ? e.message : "Gagal menghapus kartu");
+    }
+    setDeleteTarget(null);
+  };
+
+  return (
+    <Card className="mt-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-ink">Kartu Kredit</p>
+          <p className="mt-0.5 text-xs text-ink-muted">Kartu yang bisa dipilih saat transaksi memakai metode Credit Card.</p>
+        </div>
+        <Button size="sm" onClick={openAdd}>
+          <Plus size={15} weight="bold" /> Tambah Kartu
+        </Button>
+      </div>
+
+      {data.creditCards.length === 0 ? (
+        <p className="mt-4 rounded-xl bg-canvas p-3 text-sm text-ink-muted">
+          Belum ada kartu kredit. Tambahkan kartu agar bisa dipilih di form Tambah Transaksi.
+        </p>
+      ) : (
+        <ul className="mt-3 divide-y divide-slate-100 dark:divide-slate-800">
+          {data.creditCards.map((c) => (
+            <li key={c.id} className="flex items-center gap-3 py-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300">
+                <CreditCardIcon size={20} weight="duotone" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-ink">
+                  {c.name}
+                  {c.lastFour ? ` •••• ${c.lastFour}` : ""}
+                </p>
+                <p className="text-xs text-ink-muted">
+                  {c.issuer || "Umum"} · statement tgl {c.statementDay} · jatuh tempo tgl {c.dueDay}
+                  {c.creditLimit > 0 ? ` · limit ${formatIDR(c.creditLimit)}` : ""}
+                </p>
+              </div>
+              <button
+                onClick={() => openEdit(c)}
+                aria-label={`Edit ${c.name}`}
+                className="rounded-lg p-1.5 text-ink-muted hover:bg-slate-100 hover:text-ink dark:hover:bg-slate-800"
+              >
+                <PencilSimple size={16} />
+              </button>
+              <button
+                onClick={() => setDeleteTarget(c.id)}
+                aria-label={`Hapus ${c.name}`}
+                className="rounded-lg p-1.5 text-ink-muted hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950"
+              >
+                <Trash size={16} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <Sheet open={open} onClose={() => setOpen(false)} title={editing ? "Edit Kartu Kredit" : "Tambah Kartu Kredit"}>
+        <div className="space-y-3">
+          <Field label="Nama kartu">
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Contoh: BCA Card" />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Penerbit (opsional)">
+              <Input value={issuer} onChange={(e) => setIssuer(e.target.value)} placeholder="Contoh: BCA" />
+            </Field>
+            <Field label="4 digit akhir">
+              <Input
+                value={lastFour}
+                onChange={(e) => setLastFour(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                placeholder="8842"
+                inputMode="numeric"
+              />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Tanggal statement">
+              <Input type="number" min={1} max={31} value={statementDay} onChange={(e) => setStatementDay(Number(e.target.value))} />
+            </Field>
+            <Field label="Jatuh tempo">
+              <Input type="number" min={1} max={31} value={dueDay} onChange={(e) => setDueDay(Number(e.target.value))} />
+            </Field>
+          </div>
+          <Field label="Limit kredit (opsional)">
+            <AmountInput value={creditLimit} onChange={setCreditLimit} />
+          </Field>
+          <div className="flex gap-3 pt-2">
+            <Button variant="secondary" className="flex-1" onClick={() => setOpen(false)}>
+              Batal
+            </Button>
+            <Button className="flex-1" onClick={save}>
+              {editing ? "Simpan" : "Tambah"}
+            </Button>
+          </div>
+        </div>
+      </Sheet>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Hapus kartu kredit?"
+        body="Kartu yang masih dipakai transaksi atau tagihan tidak dapat dihapus."
+        confirmLabel="Hapus"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </Card>
   );
 }

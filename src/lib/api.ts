@@ -174,6 +174,30 @@ export function deleteCategory(id: string): Promise<{ ok: boolean }> {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Credit Cards CRUD                                                  */
+/* ------------------------------------------------------------------ */
+export interface CreditCardInput {
+  name: string;
+  issuer?: string;
+  lastFour?: string;
+  statementDay: number;
+  dueDay: number;
+  creditLimit?: number;
+}
+
+export function createCreditCard(input: CreditCardInput): Promise<{ id: string }> {
+  return request("POST", "/credit-cards", input);
+}
+
+export function updateCreditCard(id: string, patch: Partial<CreditCardInput>): Promise<{ ok: boolean }> {
+  return request("PATCH", `/credit-cards/${id}`, patch);
+}
+
+export function deleteCreditCard(id: string): Promise<{ ok: boolean }> {
+  return request("DELETE", `/credit-cards/${id}`);
+}
+
+/* ------------------------------------------------------------------ */
 /*  Groups                                                             */
 /* ------------------------------------------------------------------ */
 export function updateGroupName(id: string, name: string): Promise<{ ok: boolean }> {

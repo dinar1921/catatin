@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Receipt, ArrowRight } from "@phosphor-icons/react";
+import { ArrowRight } from "@phosphor-icons/react";
 import { useApp } from "../../data/store";
 import { Button, Field, Input, useToast } from "../../components/ui";
 
@@ -8,8 +8,8 @@ export function LoginPage() {
   const toast = useToast();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("dinar@keluarga.id");
-  const [password, setPassword] = useState("demo123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async () => {
@@ -40,9 +40,7 @@ export function LoginPage() {
     <div className="flex min-h-dvh flex-col items-center justify-center bg-brand-950 px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center text-center">
-          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 text-white backdrop-blur">
-            <Receipt size={28} weight="fill" />
-          </span>
+          <img src="/logo-catatin.png" alt="Logo Catatin" className="h-14 w-14 rounded-2xl shadow-card" />
           <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-white">
             Cata<span className="text-brand-200">tin</span>
           </h1>
@@ -87,11 +85,6 @@ export function LoginPage() {
               {submitting ? "Memproses…" : mode === "login" ? "Masuk" : "Daftar"} <ArrowRight size={16} weight="bold" />
             </Button>
           </div>
-        </div>
-
-        <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-3 text-center text-xs text-white/70">
-          Demo: masuk sebagai <span className="font-bold text-white">dinar@keluarga.id</span> dengan password{" "}
-          <span className="font-bold text-white">demo123</span>
         </div>
       </div>
     </div>

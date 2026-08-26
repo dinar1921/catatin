@@ -64,6 +64,9 @@ export interface StoreCtx {
   deleteBudget: (id: string) => void;
   updateCategory: (id: string, patch: { name?: string; direction?: CategoryDirection }) => void;
   deleteCategory: (id: string) => Promise<void>;
+  addCreditCard: (input: { name: string; issuer?: string; lastFour?: string; statementDay: number; dueDay: number; creditLimit?: number }) => void;
+  updateCreditCard: (id: string, patch: Partial<{ name: string; issuer: string; lastFour: string; statementDay: number; dueDay: number; creditLimit: number }>) => void;
+  deleteCreditCard: (id: string) => Promise<void>;
   updateGroupName: (name: string) => void;
   payBill: (billId: string, opts: { amount: number; walletId: string; method: PaymentMethod | null; full?: boolean }) => void;
   approveDraft: (id: string, patch: Partial<Draft>) => void;
@@ -290,6 +293,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return api.deleteCategory(id).then(refresh).catch((e) => {
           setData((d) => ({ ...d, categories: prev }));
           console.error("[store] deleteCategory:", e);
+          throw e;
+        });
+      },
+
+      addCreditCard: (input) => {
+        setData((d) => ({
+          ...d,
+          creditCards: [
+            ...d.creditCards,
+            { id: nid("cc"), name: input.name, issuer: input.issuer ?? "", lastFour: input.lastFour ?? "", statementDay: input.statementDay, dueDay: input.dueDay, creditLimit: input.creditLimit ?? 0 },
+          ],
+        }));
+        api.createCreditCard(input).then(refresh).catch((e) => fail("addCreditCard", e));
+      },
+
+      updateCreditCard: (id, patch) => {
+        setData((d) => ({
+          ...d,
+          creditCards: d.creditCards.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+        }));
+        api.updateCreditCard(id, patch).then(refresh).catch((e) => fail("updateCreditCard", e));
+      },
+
+      deleteCreditCard: (id) => {
+        const prev = data.creditCards;
+        setData((d) => ({ ...d, creditCards: d.creditCards.filter((c) => c.id !== id) }));
+        return api.deleteCreditCard(id).then(refresh).catch((e) => {
+          setData((d) => ({ ...d, creditCards: prev }));
+          console.error("[store] deleteCreditCard:", e);
           throw e;
         });
       },

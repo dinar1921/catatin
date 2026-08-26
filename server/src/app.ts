@@ -16,6 +16,7 @@ import categoriesRouter from "./routes/categories.js";
 import groupsRouter from "./routes/groups.js";
 import membersRouter from "./routes/members.js";
 import billsRouter from "./routes/bills.js";
+import creditCardsRouter from "./routes/credit-cards.js";
 import approvalsRouter from "./routes/approvals.js";
 import reportsRouter from "./routes/reports.js";
 import apiKeysRouter from "./routes/api-keys.js";
@@ -59,6 +60,7 @@ export function createApp() {
   app.use("/api/categories", requireAuth, categoriesRouter);
   app.use("/api/groups", requireAuth, groupsRouter);
   app.use("/api/bills", requireAuth, billsRouter);
+  app.use("/api/credit-cards", requireAuth, creditCardsRouter);
   app.use("/api/approvals", requireAuth, approvalsRouter);
   app.use("/api/reports", requireAuth, reportsRouter);
   app.use("/api/api-keys", requireAuth, apiKeysRouter);

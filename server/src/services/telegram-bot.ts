@@ -317,7 +317,7 @@ export async function processTelegramUpdate(update: TgUpdate): Promise<void> {
     return;
   }
 
-  // Foto / dokumen gambar → proses OCR → draft → balas konfirmasi + tombol.
+  // Foto / dokumen gambar → proses OCR → draft → balas rinci + tombol.
   const photo = message?.photo?.[message.photo.length - 1];
   const document = message?.document;
   const fileId = photo?.file_id ?? (document && String(document.mime_type ?? "").startsWith("image/") ? document.file_id : null);
@@ -326,8 +326,25 @@ export async function processTelegramUpdate(update: TgUpdate): Promise<void> {
       clearPendingChat(String(chatId));
       const buf = await downloadTelegramFile(fileId);
       const { draftId, extracted } = await processReceiptImage(buf, link.groupId, "telegram", link.profileId);
-      const total = extracted.amount > 0 ? `: "${extracted.merchant}" ${fmtIDR(extracted.amount)}` : " (nominal belum terbaca)";
-      await sendTelegramMessage(chatId, `Struk terbaca${total}\nTinjau lalu setujui lewat tombol di bawah, atau cek menu Persetujuan.`, approvalKeyboard(draftId));
+
+      // Balasan rinci: merchant, nominal, deskripsi (fakta struk + item + bayar), wallet.
+      const descLines: string[] = [
+        ...extracted.details.map((d) => `- ${d}`),
+        ...extracted.items.map((i) => `- ${i.itemName} x${i.quantity} @${fmtIDR(i.unitPrice)}`),
+      ];
+      if (extracted.paymentDetail) descLines.push(`- Bayar: ${extracted.paymentDetail}`);
+      if (extracted.paymentMethod) descLines.push(`- Metode: ${extracted.paymentMethod}`);
+
+      const msgLines = [
+        "Hasil dari Catatin struk kamu terbaca:",
+        `Merchant: ${extracted.merchant || "-"}`,
+        `Nominal: ${extracted.amount > 0 ? fmtIDR(extracted.amount) : "belum terbaca"}`,
+      ];
+      if (descLines.length > 0) msgLines.push("Deskripsi:", ...descLines);
+      msgLines.push("Wallet: Belum Dipilih");
+      msgLines.push("", "Periksa lalu setujui lewat tombol di bawah, atau cek menu Persetujuan.");
+
+      await sendTelegramMessage(chatId, msgLines.join("\n"), approvalKeyboard(draftId));
     } catch (e) {
       console.error("[tg] photo error:", e);
       await sendTelegramMessage(chatId, "Gagal memproses foto struk. Coba kirim ulang gambar yang lebih jelas.");
