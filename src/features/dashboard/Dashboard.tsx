@@ -11,12 +11,18 @@ import {
   Lightbulb,
   ListChecks,
   CaretDown,
+  ArrowUpRight,
+  ArrowDownRight,
+  MoneyWavy,
+  CreditCard as CreditCardIcon,
 } from "@phosphor-icons/react";
 import { useApp } from "../../data/store";
 import {
   budgetRows,
+  categoryById,
   filterTransactions,
   greeting,
+  isCreditCardSettlement,
   memberById,
   monthIncomeThis,
   monthSpendLastN,
@@ -24,13 +30,13 @@ import {
   runway,
   spendingByCategory,
   totalBalance,
+  walletById,
 } from "../../lib/derive";
 import { identifyTransferPairs, buildLogicalTransferRows } from "../../lib/transfer";
-import { formatIDR } from "../../lib/format";
+import { formatIDR, formatIDRSigned } from "../../lib/format";
 import { periodRange, fmtDayMonth } from "../../lib/dates";
 import { Badge, Card, CardHeader, ProgressBar } from "../../components/ui";
 import { FilterChip, useFilter as useFilterCtx } from "../../components/layout";
-import { TransactionRow } from "../../components/TransactionList";
 import { TransactionDetailSheet } from "../transactions/TransactionDetail";
 import { getInsight, getUnifiedBills } from "../../lib/api";
 import type { UnifiedBillItem } from "../../lib/types";
@@ -348,17 +354,83 @@ export function DashboardPage() {
           {recent.length === 0 ? (
             <p className="py-6 text-center text-sm text-ink-muted">Belum ada transaksi</p>
           ) : (
-            <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {recent.map((t, i) => (
-                <TransactionRow
-                  key={t.id}
-                  data={data}
-                  transaction={t}
-                  onSelect={setDetailId}
-                  showDivider={i < recent.length - 1}
-                />
-              ))}
-            </div>
+            <ul className="py-1">
+              {recent.map((t) => {
+                const isTransfer = t.source === "transfer_out" || t.source === "transfer_in";
+                const isSettlement = isCreditCardSettlement(t);
+                const cat = categoryById(data, t.categoryId);
+                const wallet = walletById(data, t.walletId);
+                const card = t.creditCardId ? data.creditCards.find((c) => c.id === t.creditCardId) : null;
+                const isExpense = !isTransfer && !isSettlement && t.type !== "income";
+
+                const label = isTransfer ? "Transfer" : isSettlement ? "Pembayaran Kartu Kredit" : t.merchant;
+                let meta: string;
+                if (isTransfer) {
+                  const src = wallet?.name ?? t.merchant;
+                  const dst = t.description.replace(/^Transfer ke\s*/i, "").split(" · ")[0].trim() || "";
+                  meta = `${src} → ${dst}`;
+                } else if (isSettlement) {
+                  meta = [wallet?.name, card?.name].filter(Boolean).join(" → ") || "Pembayaran Kartu Kredit";
+                } else {
+                  meta = [cat?.name, wallet?.name].filter(Boolean).join(" · ");
+                }
+
+                return (
+                  <li key={t.id}>
+                    <button
+                      onClick={() => setDetailId(t.id)}
+                      className="flex w-full items-center gap-3 py-3 pr-2 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                    >
+                      <span
+                        className={cn(
+                          "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
+                          isTransfer
+                            ? "bg-brand-50 text-brand-600 dark:bg-brand-950 dark:text-brand-300"
+                            : isSettlement
+                              ? "bg-brand-50 text-brand-600 dark:bg-brand-950 dark:text-brand-300"
+                              : isExpense
+                                ? "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                                : "bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400",
+                        )}
+                      >
+                        {isTransfer ? (
+                          <MoneyWavy size={18} weight="duotone" />
+                        ) : isSettlement ? (
+                          <CreditCardIcon size={18} weight="duotone" />
+                        ) : isExpense ? (
+                          <ArrowDownRight size={18} weight="bold" />
+                        ) : (
+                          <ArrowUpRight size={18} weight="bold" />
+                        )}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-ink">{label}</span>
+                        <span className="block truncate text-xs text-ink-muted">{meta}</span>
+                      </span>
+                      <div className="text-right">
+                        <span
+                          className={cn(
+                            "tnum block text-sm font-semibold",
+                            isTransfer || isSettlement
+                              ? "text-ink"
+                              : isExpense
+                                ? "text-ink"
+                                : "text-emerald-600 dark:text-emerald-400",
+                          )}
+                        >
+                          {isTransfer || isSettlement
+                            ? formatIDR(t.amount)
+                            : formatIDRSigned(isExpense ? -t.amount : t.amount)}
+                        </span>
+                        <span className="block text-xs text-ink-faint">
+                          {t.occurredAt.slice(8, 10)}/{t.occurredAt.slice(5, 7)}
+                        </span>
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </Card>
 
@@ -366,6 +438,7 @@ export function DashboardPage() {
         <Card
           onClick={() => navigate("/budget")}
           interactive
+          className="flex flex-col items-stretch justify-start"
         >
           <CardHeader
             icon={<Wallet size={16} weight="duotone" />}
