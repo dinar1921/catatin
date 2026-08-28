@@ -106,7 +106,7 @@ function DateHeader({ date, net }: { date: string; net: number }) {
 /* ------------------------------------------------------------------ */
 /* TransactionRow                                                      */
 /* ------------------------------------------------------------------ */
-function TransactionRow({
+export function TransactionRow({
   data,
   transaction: t,
   onSelect,

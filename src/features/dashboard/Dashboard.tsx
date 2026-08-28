@@ -5,8 +5,6 @@ import {
   Receipt,
   CheckSquare,
   Sparkle,
-  ArrowUpRight,
-  ArrowDownRight,
   Wallet,
   ChartPieSlice,
   CalendarCheck,
@@ -17,7 +15,6 @@ import {
 import { useApp } from "../../data/store";
 import {
   budgetRows,
-  categoryById,
   filterTransactions,
   greeting,
   memberById,
@@ -27,12 +24,13 @@ import {
   runway,
   spendingByCategory,
   totalBalance,
-  walletById,
 } from "../../lib/derive";
+import { identifyTransferPairs, buildLogicalTransferRows } from "../../lib/transfer";
 import { formatIDR } from "../../lib/format";
 import { periodRange, fmtDayMonth } from "../../lib/dates";
 import { Badge, Card, CardHeader, ProgressBar } from "../../components/ui";
 import { FilterChip, useFilter as useFilterCtx } from "../../components/layout";
+import { TransactionRow } from "../../components/TransactionList";
 import { TransactionDetailSheet } from "../transactions/TransactionDetail";
 import { getInsight, getUnifiedBills } from "../../lib/api";
 import type { UnifiedBillItem } from "../../lib/types";
@@ -90,14 +88,14 @@ export function DashboardPage() {
   const topSpend = spendingByCategory(data, ts, 4);
   const maxTop = topSpend[0]?.total ?? 1;
   const budgets = budgetRows(data, ts, activeProfileId).slice(0, 3);
-  const recent = useMemo(
-    () =>
-      [...data.transactions]
-        .filter((t) => activeProfileId === "all" || t.ownerProfileId === activeProfileId)
-        .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
-        .slice(0, 5),
-    [data, activeProfileId],
-  );
+  const recent = useMemo(() => {
+    // Baris logis: pasangan transfer dihitung SATU kali (sama dgn halaman Transaksi).
+    const allPairs = identifyTransferPairs(data.transactions);
+    const owned = [...data.transactions]
+      .filter((t) => activeProfileId === "all" || t.ownerProfileId === activeProfileId)
+      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+    return buildLogicalTransferRows(owned, allPairs).slice(0, 5);
+  }, [data, activeProfileId]);
   const pendingDrafts = data.drafts.filter(
     (d) => d.status === "draft" || d.status === "in_review",
   ).length;
@@ -351,55 +349,15 @@ export function DashboardPage() {
             <p className="py-6 text-center text-sm text-ink-muted">Belum ada transaksi</p>
           ) : (
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {recent.map((t) => {
-                const cat = categoryById(data, t.categoryId);
-                const wallet = walletById(data, t.walletId);
-                const isExpense = t.type !== "income";
-                return (
-                  <button
-                    key={t.id}
-                    onClick={() => setDetailId(t.id)}
-                    className="flex w-full items-center gap-3 py-3 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                  >
-                    <span
-                      className={cn(
-                        "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
-                        isExpense
-                          ? "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
-                          : "bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400",
-                      )}
-                    >
-                      {isExpense ? (
-                        <ArrowDownRight size={18} weight="bold" />
-                      ) : (
-                        <ArrowUpRight size={18} weight="bold" />
-                      )}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-ink">
-                        {t.merchant}
-                      </span>
-                      <span className="block truncate text-xs text-ink-muted">
-                        {cat?.name} · {wallet?.name}
-                      </span>
-                    </span>
-                    <div className="text-right">
-                      <span
-                        className={cn(
-                          "tnum block text-sm font-semibold",
-                          isExpense ? "text-ink" : "text-emerald-600 dark:text-emerald-400",
-                        )}
-                      >
-                        {isExpense ? "−" : "+"}
-                        {formatIDR(t.amount)}
-                      </span>
-                      <span className="block text-xs text-ink-faint">
-                        {t.occurredAt.slice(8, 10)}/{t.occurredAt.slice(5, 7)}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
+              {recent.map((t, i) => (
+                <TransactionRow
+                  key={t.id}
+                  data={data}
+                  transaction={t}
+                  onSelect={setDetailId}
+                  showDivider={i < recent.length - 1}
+                />
+              ))}
             </div>
           )}
         </Card>
