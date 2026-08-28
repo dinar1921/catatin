@@ -1,6 +1,7 @@
 import { db } from "../db/index.js";
 import { sv, nid } from "../db/sql.js";
 import { logActivity } from "./audit.js";
+import { assertCreditCardOwnership, assertProfileOwnership, firstValidationError } from "../validation.js";
 
 function todayISO(): string {
   const d = new Date();
@@ -26,6 +27,13 @@ export function approveDraftById(
   const merged = { ...draft, ...(patch ?? {}) };
   const amount = Number(merged.amount ?? 0);
   if (amount <= 0) throw new Error("Nominal tidak valid");
+
+  // ---- Ownership validation untuk field yang mungkin di-patch ----
+  const validationErr = firstValidationError([
+    () => assertProfileOwnership(db, (merged.ownerProfileId ?? merged.owner_profile_id) as string | null | undefined, groupId),
+    () => assertCreditCardOwnership(db, (merged.creditCardId ?? merged.credit_card_id) as string | null | undefined, groupId),
+  ]);
+  if (validationErr) throw new Error(validationErr);
 
   const transactionType = ["income", "expense"].includes(merged.transaction_type as string) ? merged.transaction_type as string : "expense";
   const occurredAt = (merged.occurredAt ?? merged.occurred_at ?? todayISO()) as string;

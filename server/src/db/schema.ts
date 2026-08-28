@@ -113,10 +113,27 @@ export function applySchema(db: DatabaseSync): void {
       period_start TEXT NOT NULL,
       period_end TEXT NOT NULL,
       statement_amount INTEGER NOT NULL,
+      official_amount INTEGER,
       paid_amount INTEGER NOT NULL DEFAULT 0,
       due_date TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','issued','overdue','paid'))
     );
+
+    CREATE TABLE IF NOT EXISTS credit_card_statement_items (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+      statement_id TEXT NOT NULL REFERENCES statements(id) ON DELETE CASCADE,
+      transaction_id TEXT REFERENCES transactions(id) ON DELETE SET NULL,
+      amount INTEGER NOT NULL,
+      item_type TEXT NOT NULL CHECK (item_type IN ('purchase','installment','fee','interest','refund','adjustment')),
+      description TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(statement_id, transaction_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_stmt_items_statement ON credit_card_statement_items(statement_id);
+    CREATE INDEX IF NOT EXISTS idx_stmt_items_transaction ON credit_card_statement_items(transaction_id);
+    CREATE INDEX IF NOT EXISTS idx_stmt_items_group ON credit_card_statement_items(group_id);
 
     CREATE TABLE IF NOT EXISTS budgets (
       id TEXT PRIMARY KEY,

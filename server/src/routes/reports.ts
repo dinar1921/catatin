@@ -115,7 +115,7 @@ router.get("/export", requireAuth, async (req: Request, res: Response) => {
       const wallet = report.data.wallets.find((w) => w.id === t.walletId)?.name ?? "";
       ws.addRow({
         tanggal: String(t.occurredAt ?? "").slice(0, 10),
-        jenis: t.type === "income" ? "Pemasukan" : t.type === "credit_card_settlement" ? "Settlement CC" : "Pengeluaran",
+        jenis: t.type === "income" ? "Pemasukan" : t.type === "credit_card_settlement" || (t.type === "transfer" && t.transfer_type === "credit_card_payment") ? "Settlement CC" : "Pengeluaran",
         merchant: String(t.merchant ?? ""),
         kategori: cat,
         wallet,
@@ -169,7 +169,7 @@ router.get("/export", requireAuth, async (req: Request, res: Response) => {
   doc.fontSize(11).text(`Detail Transaksi (${report.txs.length})`, { underline: true });
   doc.moveDown(0.2);
   for (const t of report.txs.slice(0, 50)) {
-    const type = t.type === "income" ? "Pemasukan" : t.type === "credit_card_settlement" ? "Settlement CC" : "Pengeluaran";
+    const type = t.type === "income" ? "Pemasukan" : t.type === "credit_card_settlement" || (t.type === "transfer" && t.transfer_type === "credit_card_payment") ? "Settlement CC" : "Pengeluaran";
     const sign = t.type === "income" ? "+" : "-";
     doc.fontSize(8.5).fillColor("#334155")
       .text(`${String(t.occurredAt ?? "").slice(0, 10)} · ${type} · ${String(t.merchant ?? "")}`, { width: 430, lineBreak: false });

@@ -36,7 +36,8 @@ export interface Category {
   isDefault: boolean;
 }
 
-export type TransactionType = "income" | "expense" | "credit_card_settlement";
+export type TransactionType = "income" | "expense" | "transfer";
+
 export type TransactionSource =
   | "manual"
   | "receipt_ocr"
@@ -65,6 +66,7 @@ export interface Attachment {
 
 export interface Transaction {
   id: string;
+  groupId?: string;
   type: TransactionType;
   source: TransactionSource;
   amount: number;
@@ -72,6 +74,8 @@ export interface Transaction {
   walletId: string;
   paymentMethod: PaymentMethod | null;
   creditCardId: string | null;
+  transferType?: string | null;
+  statementId?: string | null;
   occurredAt: string; // ISO
   merchant: string;
   description: string;
@@ -103,6 +107,7 @@ export interface Bill {
   categoryId: string | null;
   walletId: string | null;
   creditCardId: string | null;
+  statementId?: string | null;
   counterparty: string | null;
   frequency: string | null;
   dueDay: number | null;
@@ -121,6 +126,7 @@ export interface Installment {
   installmentAmount: number;
   tenor: number;
   paidCount: number;
+  paidAmount?: number;
   startDate: string; // ISO
   dueDay: number;
 }
@@ -133,6 +139,8 @@ export interface CreditCard {
   statementDay: number;
   dueDay: number;
   creditLimit: number;
+  ownerProfileId?: string | null;
+  scope?: WalletScope;
 }
 
 export type StatementStatus = "open" | "issued" | "overdue" | "paid";
@@ -143,9 +151,59 @@ export interface CreditCardStatement {
   periodStart: string; // ISO
   periodEnd: string; // ISO
   statementAmount: number;
+  officialAmount?: number | null;
+  derivedAmount?: number;
   paidAmount: number;
+  remainingAmount?: number;
   dueDate: string; // ISO
   status: StatementStatus;
+}
+
+export type UnifiedBillDomainType =
+  | "regular"
+  | "recurring"
+  | "installment"
+  | "debt"
+  | "receivable"
+  | "credit_card_statement";
+
+export type UnifiedBillSourceType = "bills" | "statements" | "installments";
+
+export interface UnifiedBillItem {
+  id: string;
+  domainType: UnifiedBillDomainType;
+  sourceType: UnifiedBillSourceType;
+  sourceId: string;
+  title: string;
+  amount: number;
+  paidAmount: number;
+  remainingAmount: number;
+  dueDate: string | null;
+  dueDay: number | null;
+  status: string;
+  ownerProfileId: string | null;
+  categoryId: string | null;
+  walletId: string | null;
+  creditCardId: string | null;
+  statementId: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface UnifiedBillSummary {
+  totalUnpaid: number;
+  dueTodayCount: number;
+  overdueCount: number;
+  upcomingCount: number;
+}
+
+export interface UnifiedBillsResponse {
+  summary: UnifiedBillSummary;
+  items: UnifiedBillItem[];
+}
+
+export interface UnifiedBillDetailResponse {
+  item: UnifiedBillItem;
+  history: Record<string, unknown>[];
 }
 
 export interface Budget {
@@ -234,7 +292,7 @@ export interface NewTransactionInput {
   type: TransactionType;
   amount: number;
   categoryId: string;
-  walletId: string;
+  walletId?: string | null;
   paymentMethod: PaymentMethod | null;
   creditCardId: string | null;
   occurredAt: string;

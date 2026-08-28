@@ -1,8 +1,8 @@
 import { useMemo, type ReactNode } from "react";
-import { ArrowDownRight, ArrowUpRight } from "@phosphor-icons/react";
+import { ArrowDownRight, ArrowUpRight, CreditCard as CreditCardIcon, MoneyWavy } from "@phosphor-icons/react";
 import type { AppData, Transaction } from "../lib/types";
-import { categoryById, sumExpense, sumIncome, walletById } from "../lib/derive";
-import { formatIDRSigned } from "../lib/format";
+import { categoryById, isCreditCardSettlement, sumExpense, sumIncome, walletById } from "../lib/derive";
+import { formatIDRSigned, formatIDR } from "../lib/format";
 import { fmtDayMonth } from "../lib/dates";
 import { cn } from "./ui";
 import { CaretRight as CaretRightIcon } from "@phosphor-icons/react";
@@ -117,32 +117,52 @@ function TransactionRow({
   onSelect: (id: string) => void;
   showDivider: boolean;
 }) {
-  const isExpense = t.type !== "income";
+  const isSettlement = isCreditCardSettlement(t);
+  const isTransfer = t.source === "transfer_out" || t.source === "transfer_in";
+  const isMovement = isTransfer || isSettlement;
+  const isExpense = !isMovement && t.type !== "income";
   const cat = categoryById(data, t.categoryId);
   const wallet = walletById(data, t.walletId);
-  const metadata = [cat?.name, wallet?.name].filter(Boolean).join(" · ");
+  const card = t.creditCardId ? data.creditCards.find((c) => c.id === t.creditCardId) : null;
+
+  // Label utama: satu "gerakan keuangan" logis (bukan dua transaksi terpisah).
+  const mainLabel = isTransfer ? "Transfer" : isSettlement ? "Pembayaran Kartu Kredit" : t.merchant;
+
+  // Baris kedua: sumber → tujuan.
+  const movementLine = isTransfer
+    ? (() => {
+        // Backend: merchant = nama wallet sisi ini; description = "Transfer ke/dari <nama>" (+ " · catatan" bila ada).
+        const strip = (s: string) => s.split(" · ")[0].trim();
+        if (t.source === "transfer_out") {
+          const to = strip(t.description.replace(/^Transfer ke\s*/i, "")) || wallet?.name || "Wallet tujuan";
+          return `${t.merchant || wallet?.name || "Wallet asal"} → ${to}`;
+        }
+        const from = strip(t.description.replace(/^Transfer dari\s*/i, "")) || wallet?.name || "Wallet asal";
+        return `${from} → ${t.merchant || wallet?.name || "Wallet tujuan"}`;
+      })()
+    : isSettlement
+      ? [wallet?.name, card?.name].filter(Boolean).join(" → ") || "Pembayaran Kartu Kredit"
+      : [cat?.name, wallet?.name].filter(Boolean).join(" · ");
 
   return (
     <button
       onClick={() => onSelect(t.id)}
-      aria-label={`${t.merchant}, ${metadata || "transaksi"}`}
+      aria-label={`${mainLabel}, ${movementLine || "transaksi"}`}
       className={cn(
         "flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50",
         showDivider && "border-t border-slate-100 dark:border-slate-800",
       )}
     >
-      <DirectionIcon income={!isExpense} />
+      {isTransfer ? <TransferIcon /> : isSettlement ? <SettlementIcon /> : <DirectionIcon income={!isExpense} />}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-ink">
-          {t.merchant}
-        </span>
-        {metadata && (
-          <span className="mt-0.5 block truncate text-xs text-ink-muted">{metadata}</span>
+        <span className="block truncate text-sm font-medium text-ink">{mainLabel}</span>
+        {movementLine && (
+          <span className="mt-0.5 block truncate text-xs text-ink-muted">{movementLine}</span>
         )}
       </span>
       <span className="ml-1 flex shrink-0 flex-col items-end gap-1">
-        <span className={cn("tnum text-sm font-semibold", isExpense ? "text-ink" : "text-emerald-600 dark:text-emerald-400")}>
-          {formatIDRSigned(isExpense ? -t.amount : t.amount)}
+        <span className={cn("tnum text-sm font-semibold", isMovement ? "text-ink" : isExpense ? "text-ink" : "text-emerald-600 dark:text-emerald-400")}>
+          {isMovement ? formatIDR(t.amount) : formatIDRSigned(isExpense ? -t.amount : t.amount)}
         </span>
         <span className="flex items-center gap-0.5 text-xs text-ink-faint">
           {fmtDayMonth(t.occurredAt)}
@@ -150,6 +170,34 @@ function TransactionRow({
         </span>
       </span>
     </button>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* TransferIcon — ikon pergerakan dana antar wallet                    */
+/* ------------------------------------------------------------------ */
+function TransferIcon() {
+  return (
+    <span
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-950 dark:text-brand-300"
+      aria-hidden="true"
+    >
+      <MoneyWavy size={18} weight="duotone" />
+    </span>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* SettlementIcon — ikon distinct untuk settlement kartu kredit         */
+/* ------------------------------------------------------------------ */
+function SettlementIcon() {
+  return (
+    <span
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-950 dark:text-brand-300"
+      aria-hidden="true"
+    >
+      <CreditCardIcon size={18} weight="duotone" />
+    </span>
   );
 }
 

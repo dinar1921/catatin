@@ -150,6 +150,12 @@ const transactions: Transaction[] = [
   tx("t-e20", "expense", 145_000, "c-transport", "w-mandiri", md(20, 0), "Pertamina", "Isi bensin", "p-dinar"),
   tx("t-e21", "expense", 260_000, "c-kesehatan", "w-bca-dinar", md(21, 0), "Klinik Sehat", "Periksa dokter", "p-dinar"),
 
+  // Transaksi via Kartu Kredit BCA (statement st-bca) — jumlahnya = statement_amount.
+  // walletId "" = tidak ada wallet kas yang berkurang (pembelian kartu kredit).
+  tx("t-cc1", "expense", 500_000, "c-lain", "", md(2, 0), "Cicilan Motor (CC)", "Cicilan motor via Kartu Kredit BCA", "p-dinar", { paymentMethod: "Credit Card", creditCardId: "cc-bca", statementId: "st-bca" }),
+  tx("t-cc2", "expense", 300_000, "c-lain", "", md(3, 0), "Hutang Budi (CC)", "Hutang Budi via Kartu Kredit BCA", "p-dinar", { paymentMethod: "Credit Card", creditCardId: "cc-bca", statementId: "st-bca" }),
+  tx("t-cc3", "expense", 200_000, "c-belanja", "", md(4, 0), "Belanja (CC)", "Belanja via Kartu Kredit BCA", "p-dinar", { paymentMethod: "Credit Card", creditCardId: "cc-bca", statementId: "st-bca" }),
+
   // Pengeluaran bulan lalu (untuk perbandingan)
   tx("t-e22", "expense", 380_000, "c-belanja", "w-bca-dinar", md(5, -1), "Superindo", "Belanja mingguan", "p-dinar"),
   tx("t-e23", "expense", 300_000, "c-belanja", "w-bca-dinar", md(9, -1), "Alfamart", "Sembako", "p-dinar"),
@@ -256,6 +262,7 @@ const bills: Bill[] = [
     categoryId: "c-lain",
     walletId: null,
     creditCardId: "cc-bca",
+    statementId: "st-bca",
     counterparty: "BCA",
     frequency: null,
     dueDay: 25,
@@ -263,7 +270,7 @@ const bills: Bill[] = [
     lastPaidPeriod: null,
     isActive: true,
     ownerProfileId: "p-dinar",
-    notes: "Statement bulan ini",
+    notes: "Statement bulan ini (terbentuk dari 3 transaksi kartu kredit)",
   },
 ];
 

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { sv, svs, nid } from "../db/sql.js";
+import { assertCategoryOwnership, assertProfileOwnership, firstValidationError } from "../validation.js";
 
 const router = Router();
 
@@ -25,9 +26,20 @@ router.post("/", requireAuth, (req: Request, res: Response) => {
     return;
   }
   const { categoryId, amount, ownerProfileId } = parsed.data;
+  const groupId = req.groupId!;
+
+  const err = firstValidationError([
+    () => assertCategoryOwnership(db, categoryId, groupId),
+    () => assertProfileOwnership(db, ownerProfileId, groupId),
+  ]);
+  if (err) {
+    res.status(400).json({ error: err });
+    return;
+  }
+
   const id = nid("bg");
   db.prepare("INSERT INTO budgets (id, group_id, category_id, amount, owner_profile_id) VALUES (?, ?, ?, ?, ?)").run(
-    sv(id), sv(req.groupId!), sv(categoryId), sv(amount), sv(ownerProfileId ?? null),
+    sv(id), sv(groupId), sv(categoryId), sv(amount), sv(ownerProfileId ?? null),
   );
   res.status(201).json({ id });
 });
@@ -45,6 +57,15 @@ router.patch("/:id", requireAuth, (req: Request, res: Response) => {
     return;
   }
   const patch = parsed.data;
+  const groupId = req.groupId!;
+  const patchErr = firstValidationError([
+    () => assertCategoryOwnership(db, patch.categoryId, groupId),
+    () => assertProfileOwnership(db, patch.ownerProfileId, groupId),
+  ]);
+  if (patchErr) {
+    res.status(400).json({ error: patchErr });
+    return;
+  }
   const setClauses: string[] = [];
   const params: unknown[] = [];
   if (patch.categoryId !== undefined) { setClauses.push("category_id = ?"); params.push(patch.categoryId); }

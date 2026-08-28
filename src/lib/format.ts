@@ -5,11 +5,11 @@ export function formatIDR(n: number): string {
   return (n < 0 ? "−" : "") + "Rp" + idr.format(Math.round(Math.abs(n)));
 }
 
-/** -402000 -> "−Rp 402.000"; 1378000 -> "+Rp 1.378.000"; 0 -> "Rp 0" (tanda tipografis + spasi) */
+/** -402000 -> "−Rp402.000"; 1378000 -> "+Rp1.378.000"; 0 -> "Rp0" (tanda tipografis + spasi) */
 export function formatIDRSigned(n: number): string {
-  if (n === 0) return "Rp " + idr.format(0);
+  if (n === 0) return "Rp" + idr.format(0);
   const sign = n < 0 ? "−" : "+";
-  return `${sign}Rp ${idr.format(Math.round(Math.abs(n)))}`;
+  return `${sign}Rp${idr.format(Math.round(Math.abs(n)))}`;
 }
 
 /** 1250000 -> "1,25 jt"; 350000 -> "350 rb" (untuk list mobile/compact) */

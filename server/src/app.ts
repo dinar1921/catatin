@@ -5,6 +5,7 @@ import fs from "node:fs";
 import { optionalAuth, requireAuth } from "./middleware/auth.js";
 import { apiKeyAuth } from "./middleware/api-key.js";
 import { originCheck } from "./middleware/security.js";
+import healthRouter from "./routes/health.js";
 import authRouter from "./routes/auth.js";
 import profileRouter from "./routes/profile.js";
 import dashboardRouter from "./routes/dashboard.js";
@@ -17,6 +18,7 @@ import groupsRouter from "./routes/groups.js";
 import membersRouter from "./routes/members.js";
 import billsRouter from "./routes/bills.js";
 import creditCardsRouter from "./routes/credit-cards.js";
+import creditCardStatementsRouter from "./routes/credit-card-statements.js";
 import approvalsRouter from "./routes/approvals.js";
 import reportsRouter from "./routes/reports.js";
 import apiKeysRouter from "./routes/api-keys.js";
@@ -41,6 +43,9 @@ export function createApp() {
   app.use(originCheck);
   app.use(optionalAuth);
 
+  // Health check (tanpa autentikasi — untuk container readiness, R07-D)
+  app.use("/api/health", healthRouter);
+
   // Webhooks (tanpa requireAuth — verifikasi via signature/secret sendiri)
   app.use("/api/webhooks", webhooksRouter);
 
@@ -60,7 +65,9 @@ export function createApp() {
   app.use("/api/categories", requireAuth, categoriesRouter);
   app.use("/api/groups", requireAuth, groupsRouter);
   app.use("/api/bills", requireAuth, billsRouter);
+  app.use("/api/installments", requireAuth, billsRouter);
   app.use("/api/credit-cards", requireAuth, creditCardsRouter);
+  app.use("/api/credit-card-statements", requireAuth, creditCardStatementsRouter);
   app.use("/api/approvals", requireAuth, approvalsRouter);
   app.use("/api/reports", requireAuth, reportsRouter);
   app.use("/api/api-keys", requireAuth, apiKeysRouter);

@@ -88,7 +88,7 @@ function ManualForm() {
     const e: Record<string, string> = {};
     if (amount <= 0) e.amount = "Nominal harus lebih dari 0";
     if (!categoryId) e.categoryId = "Pilih kategori";
-    if (!walletId) e.walletId = "Pilih wallet";
+    if (paymentMethod !== "Credit Card" && !walletId) e.walletId = "Pilih wallet";
     if (paymentMethod === "Credit Card" && !creditCardId) e.creditCardId = "Pilih kartu kredit";
     if (billOption === "installment" && (!tenor || Number(tenor) <= 0)) e.tenor = "Tenor harus diisi";
     if (billOption === "installment" && installmentAmount <= 0) e.installmentAmount = "Nominal cicilan harus diisi";
@@ -118,7 +118,7 @@ function ManualForm() {
       type,
       amount,
       categoryId,
-      walletId,
+      walletId: paymentMethod === "Credit Card" ? null : walletId,
       paymentMethod: paymentMethod || null,
       creditCardId: paymentMethod === "Credit Card" ? creditCardId : null,
       occurredAt,
@@ -179,16 +179,22 @@ function ManualForm() {
             ))}
           </Select>
         </Field>
-        <Field label="Wallet" error={errors.walletId}>
-          <Select value={walletId} onChange={(e) => setWalletId(e.target.value)}>
-            <option value="">Pilih wallet</option>
-            {data.wallets.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        {paymentMethod === "Credit Card" ? (
+          <div className="rounded-xl border border-brand-200 bg-brand-50 p-3 text-xs font-medium text-brand-700 dark:border-brand-800 dark:bg-brand-950/15 dark:text-brand-300">
+            Transaksi ini akan masuk ke tagihan kartu kredit.
+          </div>
+        ) : (
+          <Field label="Wallet" error={errors.walletId}>
+            <Select value={walletId} onChange={(e) => setWalletId(e.target.value)}>
+              <option value="">Pilih wallet</option>
+              {data.wallets.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
       </div>
 
       {/* Kaitkan tagihan? — trigger deterministik form dinamis (PRD §8.2) */}

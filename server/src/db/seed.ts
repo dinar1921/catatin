@@ -42,10 +42,10 @@ function monthKey(iso: string): string {
 
 interface TxSeed {
   id: string;
-  type: "income" | "expense" | "credit_card_settlement";
+  type: "income" | "expense" | "transfer";
   amount: number;
-  categoryId: string;
-  walletId: string;
+  categoryId: string | null;
+  walletId: string | null;
   date: string;
   merchant: string;
   description: string;
@@ -54,6 +54,7 @@ interface TxSeed {
     source: string;
     paymentMethod: string | null;
     creditCardId: string | null;
+    statementId: string | null;
     billId: string | null;
     installmentId: string | null;
     attachment: { id: string; fileName: string; mimeType: string; dataUrl: string } | null;
@@ -127,6 +128,12 @@ const transactions: TxSeed[] = [
   { id: "t-e20", type: "expense", amount: 145_000, categoryId: "c-transport", walletId: "w-mandiri", date: md(20, 0), merchant: "Pertamina", description: "Isi bensin", owner: "p-dinar" },
   { id: "t-e21", type: "expense", amount: 260_000, categoryId: "c-kesehatan", walletId: "w-bca-dinar", date: md(21, 0), merchant: "Klinik Sehat", description: "Periksa dokter", owner: "p-dinar" },
 
+  // Transaksi via Kartu Kredit BCA (statement st-bca) — jumlahnya = statement_amount.
+  // walletId null: pembelian kartu kredit tidak mengurangi wallet kas.
+  { id: "t-cc1", type: "expense", amount: 500_000, categoryId: "c-lain", walletId: null, date: md(2, 0), merchant: "Cicilan Motor (CC)", description: "Cicilan motor via Kartu Kredit BCA", owner: "p-dinar", extra: { paymentMethod: "Credit Card", creditCardId: "cc-bca", statementId: "st-bca" } },
+  { id: "t-cc2", type: "expense", amount: 300_000, categoryId: "c-lain", walletId: null, date: md(3, 0), merchant: "Hutang Budi (CC)", description: "Hutang Budi via Kartu Kredit BCA", owner: "p-dinar", extra: { paymentMethod: "Credit Card", creditCardId: "cc-bca", statementId: "st-bca" } },
+  { id: "t-cc3", type: "expense", amount: 200_000, categoryId: "c-belanja", walletId: null, date: md(4, 0), merchant: "Belanja (CC)", description: "Belanja via Kartu Kredit BCA", owner: "p-dinar", extra: { paymentMethod: "Credit Card", creditCardId: "cc-bca", statementId: "st-bca" } },
+
   { id: "t-e22", type: "expense", amount: 380_000, categoryId: "c-belanja", walletId: "w-bca-dinar", date: md(5, -1), merchant: "Superindo", description: "Belanja mingguan", owner: "p-dinar" },
   { id: "t-e23", type: "expense", amount: 300_000, categoryId: "c-belanja", walletId: "w-bca-dinar", date: md(9, -1), merchant: "Alfamart", description: "Sembako", owner: "p-dinar" },
   { id: "t-e24", type: "expense", amount: 480_000, categoryId: "c-makan", walletId: "w-bca-dinar", date: md(13, -1), merchant: "Restoran Keluarga", description: "Makan keluarga", owner: "p-dinar" },
@@ -158,6 +165,7 @@ const bills: {
   categoryId: string | null;
   walletId: string | null;
   creditCardId: string | null;
+  statementId: string | null;
   counterparty: string | null;
   frequency: string | null;
   dueDay: number | null;
@@ -166,11 +174,11 @@ const bills: {
   owner: string;
   notes: string;
 }[] = [
-  { id: "b-netflix", title: "Netflix", type: "recurring", amount: 186_000, paidAmount: 0, categoryId: "c-hiburan", walletId: null, creditCardId: null, counterparty: "Netflix", frequency: "bulanan", dueDay: 15, dueDate: null, lastPaidPeriod: null, owner: "p-dinar", notes: "Langganan premium family" },
-  { id: "b-listrik", title: "Listrik PLN", type: "recurring", amount: 420_000, paidAmount: 420_000, categoryId: "c-tagihan", walletId: "w-bca-dinar", creditCardId: null, counterparty: "PLN", frequency: "bulanan", dueDay: 20, dueDate: null, lastPaidPeriod: monthKey(todayISO()), owner: "p-dinar", notes: "Rumah utama" },
-  { id: "b-motor", title: "Cicilan Motor", type: "installment", amount: 12_000_000, paidAmount: 3_500_000, categoryId: "c-lain", walletId: null, creditCardId: null, counterparty: "Adira Finance", frequency: null, dueDay: 25, dueDate: null, lastPaidPeriod: null, owner: "p-dinar", notes: "Honda Beat, tenor 24 bulan" },
-  { id: "b-hutang", title: "Hutang Budi", type: "debt", amount: 300_000, paidAmount: 0, categoryId: "c-lain", walletId: null, creditCardId: null, counterparty: "Budi", frequency: null, dueDay: null, dueDate: ago(3), lastPaidPeriod: null, owner: "p-dinar", notes: "Pinjam untuk servis motor" },
-  { id: "b-cc", title: "Tagihan Kartu Kredit BCA", type: "credit_card_statement", amount: 1_000_000, paidAmount: 0, categoryId: "c-lain", walletId: null, creditCardId: "cc-bca", counterparty: "BCA", frequency: null, dueDay: 25, dueDate: null, lastPaidPeriod: null, owner: "p-dinar", notes: "Statement bulan ini" },
+  { id: "b-netflix", title: "Netflix", type: "recurring", amount: 186_000, paidAmount: 0, categoryId: "c-hiburan", walletId: null, creditCardId: null, statementId: null, counterparty: "Netflix", frequency: "bulanan", dueDay: 15, dueDate: null, lastPaidPeriod: null, owner: "p-dinar", notes: "Langganan premium family" },
+  { id: "b-listrik", title: "Listrik PLN", type: "recurring", amount: 420_000, paidAmount: 420_000, categoryId: "c-tagihan", walletId: "w-bca-dinar", creditCardId: null, statementId: null, counterparty: "PLN", frequency: "bulanan", dueDay: 20, dueDate: null, lastPaidPeriod: monthKey(todayISO()), owner: "p-dinar", notes: "Rumah utama" },
+  { id: "b-motor", title: "Cicilan Motor", type: "installment", amount: 12_000_000, paidAmount: 3_500_000, categoryId: "c-lain", walletId: null, creditCardId: null, statementId: null, counterparty: "Adira Finance", frequency: null, dueDay: 25, dueDate: null, lastPaidPeriod: null, owner: "p-dinar", notes: "Honda Beat, tenor 24 bulan" },
+  { id: "b-hutang", title: "Hutang Budi", type: "debt", amount: 300_000, paidAmount: 0, categoryId: "c-lain", walletId: null, creditCardId: null, statementId: null, counterparty: "Budi", frequency: null, dueDay: null, dueDate: ago(3), lastPaidPeriod: null, owner: "p-dinar", notes: "Pinjam untuk servis motor" },
+  { id: "b-cc", title: "Tagihan Kartu Kredit BCA", type: "credit_card_statement", amount: 1_000_000, paidAmount: 0, categoryId: "c-lain", walletId: null, creditCardId: "cc-bca", statementId: "st-bca", counterparty: "BCA", frequency: null, dueDay: 25, dueDate: null, lastPaidPeriod: null, owner: "p-dinar", notes: "Statement bulan ini (terbentuk dari 3 transaksi kartu kredit)" },
 ];
 
 const attachStruk = {
@@ -213,8 +221,8 @@ export async function seedDatabase(): Promise<void> {
     }
 
     const insTx = db.prepare(`INSERT INTO transactions
-      (id, group_id, type, source, amount, category_id, wallet_id, payment_method, credit_card_id, occurred_at, merchant, description, owner_profile_id, created_by, bill_id, installment_id, attachment_json, items_json, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      (id, group_id, type, source, amount, category_id, wallet_id, payment_method, credit_card_id, occurred_at, merchant, description, owner_profile_id, created_by, bill_id, installment_id, statement_id, attachment_json, items_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 
     for (const t of transactions) {
       const extra = t.extra ?? {};
@@ -224,24 +232,24 @@ export async function seedDatabase(): Promise<void> {
       insTx.run(
         t.id, groupId, t.type, source, t.amount, t.categoryId, t.walletId,
         extra.paymentMethod ?? null, extra.creditCardId ?? null, t.date, t.merchant, t.description,
-        t.owner, t.owner, extra.billId ?? null, extra.installmentId ?? null,
+        t.owner, t.owner, extra.billId ?? null, extra.installmentId ?? null, extra.statementId ?? null,
         att ? JSON.stringify(att) : null, JSON.stringify(items), new Date().toISOString(),
       );
     }
 
     const insBill = db.prepare(`INSERT INTO bills
-      (id, group_id, title, type, amount, paid_amount, category_id, wallet_id, credit_card_id, counterparty, frequency, due_day, due_date, last_paid_period, is_active, owner_profile_id, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`);
+      (id, group_id, title, type, amount, paid_amount, category_id, wallet_id, credit_card_id, statement_id, counterparty, frequency, due_day, due_date, last_paid_period, is_active, owner_profile_id, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`);
     for (const b of bills) {
-      insBill.run(b.id, groupId, b.title, b.type, b.amount, b.paidAmount, b.categoryId, b.walletId, b.creditCardId, b.counterparty, b.frequency, b.dueDay, b.dueDate, b.lastPaidPeriod, b.owner, b.notes);
+      insBill.run(b.id, groupId, b.title, b.type, b.amount, b.paidAmount, b.categoryId, b.walletId, b.creditCardId, b.statementId, b.counterparty, b.frequency, b.dueDay, b.dueDate, b.lastPaidPeriod, b.owner, b.notes);
     }
 
     db.prepare(`INSERT INTO installments (id, group_id, bill_id, title, total_amount, installment_amount, tenor, paid_count, start_date, due_day)
       VALUES ('i-motor', ?, 'b-motor', 'Cicilan Motor', 12000000, 500000, 24, 7, ?, 25)`)
       .run(groupId, md(25, -17));
 
-    db.prepare(`INSERT INTO credit_cards (id, group_id, name, issuer, last_four, statement_day, due_day, credit_limit)
-      VALUES ('cc-bca', ?, 'Kartu Kredit BCA', 'BCA', '8842', 5, 25, 10000000)`).run(groupId);
+    db.prepare(`INSERT INTO credit_cards (id, group_id, name, issuer, last_four, statement_day, due_day, credit_limit, owner_profile_id, scope)
+      VALUES ('cc-bca', ?, 'Kartu Kredit BCA', 'BCA', '8842', 5, 25, 10000000, 'p-dinar', 'shared')`).run(groupId);
 
     db.prepare(`INSERT INTO statements (id, group_id, credit_card_id, period_start, period_end, statement_amount, paid_amount, due_date, status)
       VALUES ('st-bca', ?, 'cc-bca', ?, ?, 1000000, 0, ?, 'open')`)

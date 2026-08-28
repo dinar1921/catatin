@@ -187,8 +187,8 @@ function MobileNav() {
   const tabs = [
     { to: "/dashboard", label: "Beranda", icon: House },
     { to: "/transactions", label: "Transaksi", icon: ArrowsLeftRight },
-    { to: "/reports", label: "Laporan", icon: ChartBar },
-    { to: "/settings", label: "Setting", icon: GearSix },
+    { to: "/bills", label: "Tagihan", icon: Receipt },
+    { to: "/settings", label: "Lainnya", icon: GearSix },
   ];
 
   return (
@@ -266,6 +266,7 @@ function MobileMenu() {
     { to: "/bills", label: "Tagihan", icon: Receipt },
     { to: "/wallets", label: "Wallet", icon: WalletIcon },
     { to: "/budget", label: "Budget", icon: CurrencyCircleDollar },
+    { to: "/reports", label: "Laporan", icon: ChartBar },
     { to: "/approvals", label: "Persetujuan", icon: CheckSquare },
     { to: "/profile", label: "Profile", icon: UserCircle },
   ];
@@ -783,7 +784,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     window.scrollTo({ top: 0 });
   }, [location.pathname]);
 
-  const hasFilter = ["/dashboard", "/transactions", "/reports"].includes(location.pathname);
+  const hasFilter = ["/dashboard", "/transactions", "/bills", "/reports"].includes(location.pathname);
 
   return (
     <div className="flex min-h-dvh bg-canvas">

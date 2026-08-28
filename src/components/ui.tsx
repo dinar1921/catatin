@@ -11,7 +11,7 @@ import {
   type SelectHTMLAttributes,
 } from "react";
 import { createPortal } from "react-dom";
-import { X, CheckCircle, WarningCircle, Info, CaretLeft, CaretRight } from "@phosphor-icons/react";
+import { X, CheckCircle, WarningCircle, Info, CaretLeft, CaretRight, CaretDown } from "@phosphor-icons/react";
 import { formatIDR, terbilang } from "../lib/format";
 
 export function cn(...parts: Array<string | false | null | undefined>): string {
@@ -101,15 +101,18 @@ export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputEleme
 
 export function Select({ className, children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <select
-      {...rest}
-      className={cn(
-        "h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 pr-9 text-sm text-ink focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 dark:border-slate-700 dark:bg-slate-900 dark:text-white",
-        className,
-      )}
-    >
-      {children}
-    </select>
+    <div className="relative">
+      <select
+        {...rest}
+        className={cn(
+          "h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 pr-10 text-sm text-ink focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 dark:border-slate-700 dark:bg-slate-900 dark:text-white",
+          className,
+        )}
+      >
+        {children}
+      </select>
+      <CaretDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ink-faint" aria-hidden="true" />
+    </div>
   );
 }
 
@@ -129,17 +132,49 @@ export function AmountInput({
   showTerbilang?: boolean;
   compact?: boolean;
 }) {
+  const ref = useRef<HTMLInputElement | null>(null);
+  // Simpan digit mentah di state lokal agar caret tidak "lompat" ke akhir
+  // setiap kali format ulang (mis. "1000" -> "1.000") — perbaikan bug input nominal.
+  const [digits, setDigits] = useState(value === 0 ? "" : String(value));
+
+  // Sinkronkan dari luar (reset/reset form) hanya saat field tidak sedang difokus.
+  useEffect(() => {
+    if (document.activeElement !== ref.current) {
+      setDigits(value === 0 ? "" : String(value));
+    }
+  }, [value]);
+
+  const display = digits === "" ? "" : Number(digits).toLocaleString("id-ID");
+
+  const commit = (raw: string) => {
+    const el = ref.current;
+    const caretInRaw = el?.selectionStart ?? raw.length;
+    const d = raw.replace(/\D/g, "").slice(0, 15); // batasi panjang digit (hindari presisi hilang)
+
+    setDigits(d);
+    onChange(d ? parseInt(d, 10) : 0);
+
+    // Pulihkan posisi kursor setelah reformat (hitung ulang dari prefix digit).
+    requestAnimationFrame(() => {
+      const node = ref.current;
+      if (!node) return;
+      const prefixDigits = d.slice(0, caretInRaw);
+      const formattedPrefix = prefixDigits === "" ? "" : Number(prefixDigits).toLocaleString("id-ID");
+      const pos = formattedPrefix.length;
+      node.setSelectionRange(pos, pos);
+    });
+  };
+
   return (
     <div>
       <div className="relative">
         <span className={cn("absolute left-3 top-1/2 -translate-y-1/2 font-bold text-ink-muted", compact ? "text-sm" : "text-lg")}>Rp</span>
         <input
+          ref={ref}
           inputMode="numeric"
-          value={value === 0 ? "" : value.toLocaleString("id-ID")}
-          onChange={(e) => {
-            const digits = e.target.value.replace(/\D/g, "");
-            onChange(digits ? parseInt(digits, 10) : 0);
-          }}
+          value={display}
+          onChange={(e) => commit(e.target.value)}
+          onFocus={() => setDigits(value === 0 ? "" : String(value))}
           placeholder={placeholder}
           className={cn(
             "tnum w-full rounded-xl border border-slate-200 bg-white font-bold text-ink placeholder:font-normal placeholder:text-ink-faint focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 dark:border-slate-700 dark:bg-slate-900 dark:text-white",
@@ -147,7 +182,7 @@ export function AmountInput({
           )}
         />
       </div>
-      {showTerbilang && value > 0 && (
+      {showTerbilang && value > 0 && value <= Number.MAX_SAFE_INTEGER && (
         <p className="mt-1.5 text-xs font-medium text-brand-600 dark:text-brand-400">{terbilang(value)}</p>
       )}
     </div>
@@ -429,20 +464,115 @@ export function Sheet({
   fullScreen?: boolean;
   dismissable?: boolean;
 }) {
+  const [mobile, setMobile] = useState(false);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)");
+    setMobile(mq.matches);
+    const onChange = () => setMobile(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  // R07-C: initial focus + focus trap + focus restoration.
   useEffect(() => {
     if (!open) return;
+    triggerRef.current = document.activeElement as HTMLElement | null;
+
+    const panel = panelRef.current;
+    if (panel) {
+      const first = panel.querySelector<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      // Fokus elemen pertama setelah panel dirender (sedikit delay untuk layout).
+      window.setTimeout(() => first?.focus(), 30);
+    }
+
+    const handleTab = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      const p = panelRef.current;
+      if (!p) return;
+      const focusables = p.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape" && dismissable) onClose();
     };
     document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", handleTab);
     document.addEventListener("keydown", handleEscape);
     return () => {
       document.body.style.overflow = "";
+      document.removeEventListener("keydown", handleTab);
       document.removeEventListener("keydown", handleEscape);
+      // Fokus kembali ke elemen pemicu setelah tutup.
+      triggerRef.current?.focus?.();
     };
   }, [open, onClose, dismissable]);
 
   if (!open) return null;
+
+  const panel = (
+    <>
+      {title && (
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+          <h2 className="text-base font-semibold text-ink">{title}</h2>
+          {dismissable && (
+            <button
+              onClick={onClose}
+              aria-label="Tutup"
+              className="flex h-11 w-11 items-center justify-center rounded-lg text-ink-muted hover:bg-slate-100 hover:text-ink dark:hover:bg-slate-800"
+            >
+              <X size={20} />
+            </button>
+          )}
+        </div>
+      )}
+      <div className="flex-1 overflow-y-auto p-5">{children}</div>
+      {footer && (
+        <div className="mt-5 flex gap-3 border-t border-slate-100 px-5 py-4 dark:border-slate-800">
+          {footer}
+        </div>
+      )}
+    </>
+  );
+
+  if (mobile) {
+    // Mobile: bottom sheet / full-height sheet (flowchart rule).
+    return (
+      <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
+        <div
+          className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm"
+          onClick={dismissable ? onClose : undefined}
+        />
+        <div
+          ref={panelRef}
+          className={cn(
+            "absolute inset-x-0 bottom-0 mx-auto flex w-full flex-col overflow-hidden rounded-t-2xl bg-white shadow-xl dark:bg-slate-900",
+            fullScreen ? "h-[92dvh]" : "max-h-[88dvh]",
+          )}
+        >
+          {panel}
+        </div>
+      </div>
+    );
+  }
+
+  // Desktop / tablet: centered modal.
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -453,30 +583,14 @@ export function Sheet({
         className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm"
         onClick={dismissable ? onClose : undefined}
       />
-      <div className={cn(
-        "relative flex w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-slate-900",
-        fullScreen ? "h-[88dvh]" : "max-h-[88dvh]"
-      )}>
-        {title && (
-          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
-            <h2 className="text-base font-semibold text-ink">{title}</h2>
-            {dismissable && (
-              <button
-                onClick={onClose}
-                aria-label="Tutup"
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted hover:bg-slate-100 hover:text-ink dark:hover:bg-slate-800"
-              >
-                <X size={20} />
-              </button>
-            )}
-          </div>
+      <div
+        ref={panelRef}
+        className={cn(
+          "relative flex w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-slate-900",
+          fullScreen ? "h-[88dvh]" : "max-h-[88dvh]",
         )}
-        <div className="flex-1 overflow-y-auto p-5">{children}</div>
-        {footer && (
-          <div className="mt-5 flex gap-3 border-t border-slate-100 px-5 py-4 dark:border-slate-800">
-            {footer}
-          </div>
-        )}
+      >
+        {panel}
       </div>
     </div>
   );

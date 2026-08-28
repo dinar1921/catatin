@@ -1,0 +1,9 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  // Kilo Code project configuration.
+  // Project rules are loaded from the local workspace.
+  "instructions": [
+    ".kilo/rules/catatin-core.md",
+    ".kilo/rules-code/*.md"
+  ]
+}

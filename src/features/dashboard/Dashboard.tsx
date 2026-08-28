@@ -27,15 +27,15 @@ import {
   runway,
   spendingByCategory,
   totalBalance,
-  upcomingBills,
   walletById,
 } from "../../lib/derive";
 import { formatIDR } from "../../lib/format";
-import { dueLabel, periodRange } from "../../lib/dates";
+import { periodRange, fmtDayMonth } from "../../lib/dates";
 import { Badge, Card, CardHeader, ProgressBar } from "../../components/ui";
 import { FilterChip, useFilter as useFilterCtx } from "../../components/layout";
 import { TransactionDetailSheet } from "../transactions/TransactionDetail";
-import { getInsight } from "../../lib/api";
+import { getInsight, getUnifiedBills } from "../../lib/api";
+import type { UnifiedBillItem } from "../../lib/types";
 
 export function DashboardPage() {
   const { data, activeProfileId, sessionProfileId } = useApp();
@@ -44,6 +44,7 @@ export function DashboardPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [showInsight, setShowInsight] = useState(false);
   const [ai, setAi] = useState<{ text: string | null; recommendation: string | null }>({ text: null, recommendation: null });
+  const [upcoming, setUpcoming] = useState<UnifiedBillItem[]>([]);
 
   // Fetch AI insight saat filter berubah (pakai heuristic fallback bila gagal / tidak dikonfigurasi).
   useEffect(() => {
@@ -54,6 +55,21 @@ export function DashboardPage() {
       .catch(() => { if (!cancelled) setAi({ text: null, recommendation: null }); });
     return () => { cancelled = true; };
   }, [filter, activeProfileId]);
+
+  // Tagihan dari backend unified API (bukan kalkulasi client-side).
+  useEffect(() => {
+    let cancelled = false;
+    getUnifiedBills({ profileId: activeProfileId })
+      .then((res) => {
+        if (cancelled) return;
+        const active = res.items.filter(
+          (i) => i.status !== "paid" && i.status !== "paid_off" && i.status !== "completed" && i.status !== "cancelled",
+        );
+        setUpcoming(active.slice(0, 4));
+      })
+      .catch(() => { if (!cancelled) setUpcoming([]); });
+    return () => { cancelled = true; };
+  }, [activeProfileId, filter]);
 
   const me = memberById(data, sessionProfileId);
   const ts = useMemo(
@@ -73,7 +89,6 @@ export function DashboardPage() {
 
   const topSpend = spendingByCategory(data, ts, 4);
   const maxTop = topSpend[0]?.total ?? 1;
-  const bills = upcomingBills(data, activeProfileId, 4);
   const budgets = budgetRows(data, ts, activeProfileId).slice(0, 3);
   const recent = useMemo(
     () =>
@@ -128,43 +143,49 @@ export function DashboardPage() {
       )}
 
       {/* ── BalanceCard — V2 spec §14.2: gradient hero + decorative circles ─ */}
-      <button
-        onClick={() => navigate("/wallets")}
-        className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-brand-700 via-brand-700 to-brand-800 p-4 text-left text-white shadow-card transition-all active:scale-[0.995] sm:p-5 dark:to-brand-900"
-      >
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-brand-700 via-brand-700 to-brand-800 p-4 text-left text-white shadow-card sm:p-5 dark:to-brand-900">
         {/* Decorative circles */}
         <div className="pointer-events-none absolute -right-10 -top-12 h-40 w-40 rounded-full bg-white/10" />
         <div className="pointer-events-none absolute -bottom-16 right-16 h-32 w-32 rounded-full bg-brand-500/30" />
 
-        <div className="relative flex items-start justify-between gap-3">
-          <div>
-            <p className="flex items-center gap-1.5 text-sm text-brand-100">
+        <button
+          onClick={() => navigate("/wallets")}
+          className="relative flex w-full items-start justify-between gap-3 text-left"
+        >
+          <span>
+            <span className="flex items-center gap-1.5 text-sm text-brand-100">
               <Wallet size={16} weight="duotone" /> Total uangmu saat ini
-            </p>
-            <p className="tnum mt-2 text-4xl font-bold leading-none tracking-tight sm:text-5xl">
+            </span>
+            <span className="tnum mt-2 block text-3xl font-bold leading-none tracking-tight sm:text-5xl">
               {formatIDR(balance)}
-            </p>
-          </div>
+            </span>
+          </span>
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20">
             <CaretRight size={17} weight="bold" />
           </span>
-        </div>
+        </button>
 
         <div className="relative mt-6 grid grid-cols-2 gap-4 border-t border-white/20 pt-4">
-          <div>
-            <p className="text-xs text-brand-100">Pengeluaran bulan ini</p>
-            <p className="tnum mt-0.5 text-base font-semibold sm:text-lg">
+          <button
+            onClick={() => navigate("/transactions?type=expense")}
+            className="rounded-xl px-2 py-1 text-left transition-colors hover:bg-white/10"
+          >
+            <span className="block text-xs text-brand-100">Pengeluaran bulan ini</span>
+            <span className="tnum mt-0.5 block text-base font-semibold sm:text-lg">
               {formatIDR(monthSpend)}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-brand-100">Pemasukan</p>
-            <p className="tnum mt-0.5 text-base font-semibold sm:text-lg">
+            </span>
+          </button>
+          <button
+            onClick={() => navigate("/transactions?type=income")}
+            className="rounded-xl px-2 py-1 text-left transition-colors hover:bg-white/10"
+          >
+            <span className="block text-xs text-brand-100">Pemasukan</span>
+            <span className="tnum mt-0.5 block text-base font-semibold sm:text-lg">
               {formatIDR(monthIncome)}
-            </p>
-          </div>
+            </span>
+          </button>
         </div>
-      </button>
+      </div>
 
       {/* ── Row 2: Spending + Upcoming Bills (2-col at lg) ────── */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -172,7 +193,7 @@ export function DashboardPage() {
         <Card>
           <CardHeader
             icon={<ChartPieSlice size={16} weight="duotone" />}
-            title="Spending utama"
+            title="Pengeluaran Utama"
             subtitle="Pengeluaran per kategori bulan ini"
           />
           {topSpend.length === 0 ? (
@@ -181,14 +202,19 @@ export function DashboardPage() {
             <ul className="space-y-4">
               {topSpend.map((c) => (
                 <li key={c.categoryId}>
-                  <div className="mb-1.5 flex items-baseline justify-between">
-                    <span className="text-sm font-medium text-ink">{c.name}</span>
-                    <span className="tnum text-sm font-semibold text-ink">{formatIDR(c.total)}</span>
-                  </div>
-                  <ProgressBar
-                    pct={(c.total / maxTop) * 100}
-                    tone={c.total / maxTop > 0.8 ? "warn" : "brand"}
-                  />
+                  <button
+                    onClick={() => navigate(`/transactions?categoryId=${c.categoryId}`)}
+                    className="w-full text-left"
+                  >
+                    <div className="mb-1.5 flex items-baseline justify-between">
+                      <span className="text-sm font-medium text-ink">{c.name}</span>
+                      <span className="tnum text-sm font-semibold text-ink">{formatIDR(c.total)}</span>
+                    </div>
+                    <ProgressBar
+                      pct={(c.total / maxTop) * 100}
+                      tone={c.total / maxTop > 0.8 ? "warn" : "brand"}
+                    />
+                  </button>
                 </li>
               ))}
             </ul>
@@ -202,22 +228,27 @@ export function DashboardPage() {
             title="Tagihan & cicilan"
             subtitle="Yang perlu dibayar bulan ini"
             action={
-              <Badge variant="default">
-                {formatIDR(bills.reduce((s, b) => s + (b.amount - b.paidAmount), 0))}
-              </Badge>
+              <button
+                onClick={() => navigate("/bills")}
+                className="flex items-center gap-1 text-xs font-semibold text-brand-600 hover:text-brand-700 dark:text-brand-400"
+              >
+                Lihat semua ({upcoming.length}) <CaretRight size={14} weight="bold" />
+              </button>
             }
           />
-          {bills.length === 0 ? (
+          {upcoming.length === 0 ? (
             <p className="py-6 text-center text-sm text-ink-muted">Tidak ada tagihan bulan ini.</p>
           ) : (
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {bills.map((b) => {
-                // Angka tanggal: prioritas dueDay, fallback dari dueDate (hutang/piutang hanya punya dueDate).
+              {upcoming.map((b) => {
                 const day = b.dueDay ?? (b.dueDate ? Number(b.dueDate.slice(8, 10)) : null);
+                const instProgress = b.metadata.progressText as string | undefined;
+                const targetTab =
+                  b.domainType === "credit_card_statement" ? "/bills?tab=cc" : b.domainType === "installment" ? "/bills?tab=installment" : `/bills/${b.sourceId}`;
                 return (
                   <button
                     key={b.id}
-                    onClick={() => navigate(`/bills/${b.id}`)}
+                    onClick={() => navigate(targetTab)}
                     className="flex w-full items-center gap-3 py-3 text-left"
                   >
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-xs font-semibold text-brand-700 dark:bg-brand-950 dark:text-brand-300">
@@ -226,19 +257,16 @@ export function DashboardPage() {
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium text-ink">{b.title}</span>
                       <span className="block text-xs text-ink-muted">
-                        {dueLabel(b.dueDay, b.dueDate)}
-                        {(() => {
-                          const inst = data.installments.find((i) => i.billId === b.id);
-                          return inst ? ` · ${inst.paidCount}/${inst.tenor}` : "";
-                        })()}
+                        {b.dueDate ? `Jatuh tempo ${fmtDayMonth(b.dueDate)}` : b.dueDay != null ? `Jatuh tempo tgl ${b.dueDay}` : ""}
+                        {instProgress ? ` · ${instProgress}` : ""}
                       </span>
                     </span>
                     <div className="text-right">
-                      <Badge variant={b.type === "installment" ? "warning" : "neutral"}>
-                        {b.type === "installment" ? "Cicilan" : "Rutin"}
+                      <Badge variant={b.domainType === "installment" ? "warning" : "neutral"}>
+                        {b.domainType === "installment" ? "Cicilan" : b.domainType === "credit_card_statement" ? "Kartu Kredit" : "Rutin"}
                       </Badge>
                       <p className="tnum mt-1 text-sm font-semibold text-ink">
-                        {formatIDR(b.amount - b.paidAmount)}
+                        {formatIDR(b.remainingAmount)}
                       </p>
                     </div>
                   </button>
@@ -377,7 +405,10 @@ export function DashboardPage() {
         </Card>
 
         {/* Status budget — V2 spec §14.7 */}
-        <Card>
+        <Card
+          onClick={() => navigate("/budget")}
+          interactive
+        >
           <CardHeader
             icon={<Wallet size={16} weight="duotone" />}
             title="Status budget"

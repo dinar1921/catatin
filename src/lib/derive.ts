@@ -1,6 +1,11 @@
 import type { AppData, Bill, BillStatus, Category, FilterState, Profile, Transaction, Wallet } from "./types";
 import { monthKey, periodRange, todayISO, inRange } from "./dates";
 
+/** Deteksi transaksi settlement kartu kredit (presentation layer; tidak mengubah semantik finansial). */
+export function isCreditCardSettlement(t: { type: string; transferType?: string | null }): boolean {
+  return t.type === "credit_card_settlement" || (t.type === "transfer" && t.transferType === "credit_card_payment");
+}
+
 export function walletBalance(data: AppData, walletId: string): number {
   let b = 0;
   for (const t of data.transactions) {
@@ -224,7 +229,7 @@ export function monthSpendLastN(data: AppData, profileId: string, n: number): nu
   let total = 0;
   let count = 0;
   for (const t of data.transactions) {
-    if (t.type !== "expense") continue;
+    if (t.type !== "expense" || t.source === "transfer_out") continue;
     if (profileId !== "all" && t.ownerProfileId !== profileId) continue;
     const diff = monthDiff(thisKey, monthKey(t.occurredAt));
     if (diff >= 1 && diff <= n) {
@@ -241,6 +246,7 @@ export function monthSpendThis(data: AppData, profileId: string): number {
     .filter(
       (t) =>
         t.type === "expense" &&
+        t.source !== "transfer_out" &&
         (profileId === "all" || t.ownerProfileId === profileId) &&
         monthKey(t.occurredAt) === key,
     )
@@ -254,6 +260,7 @@ export function monthIncomeThis(data: AppData, profileId: string): number {
       (t) =>
         t.type === "income" &&
         t.source !== "opening_balance" &&
+        t.source !== "transfer_in" &&
         (profileId === "all" || t.ownerProfileId === profileId) &&
         monthKey(t.occurredAt) === key,
     )

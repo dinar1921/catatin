@@ -20,9 +20,9 @@ function billStatus(b: Record<string, unknown>): string {
   const type = b.type as string;
   const today = todayISO();
 
-  if (paid >= amount) return "paid_off";
+  if (paid >= amount && amount > 0) return "paid_off";
   if (type === "recurring" && lastPaidPeriod === today.slice(0, 7)) return "paid";
-  if (type === "recurring" && lastPaidPeriod === undefined) return "unpaid";
+  if (type === "recurring" && (lastPaidPeriod === undefined || lastPaidPeriod === null)) return "unpaid";
 
   let dueLabel: string | null = null;
   if (dueDate) dueLabel = dueDate;
@@ -42,11 +42,14 @@ function billStatus(b: Record<string, unknown>): string {
 }
 
 /**
- * Notifikasi derived: bill jatuh tempo hari ini / overdue, dan draft pending.
- * Dipakai oleh /api/dashboard dan /api/notifications.
+ * Notifikasi derived (Phase 5 & 6):
+ * - Bill jatuh tempo hari ini / overdue.
+ * - Statement kartu kredit H-3 (upcoming), due today, dan overdue.
+ * - Draft pending persetujuan.
  */
 export function buildDerivedNotifications(data: AppData): { id: string; kind: string; title: string; body: string; linkTo: string; read: boolean; createdAt: string }[] {
   const today = todayISO();
+  const in3Days = addDays(today, 3);
   const out: { id: string; kind: string; title: string; body: string; linkTo: string; read: boolean; createdAt: string }[] = [];
 
   for (const b of data.bills) {
@@ -72,6 +75,50 @@ export function buildDerivedNotifications(data: AppData): { id: string; kind: st
         read: false,
         createdAt: today,
       });
+    }
+  }
+
+  // Notifikasi Statement Kartu Kredit (Phase 6)
+  for (const s of data.statements) {
+    const stmtAmount = Number(s.statementAmount ?? 0);
+    const paidAmount = Number(s.paidAmount ?? 0);
+    const remaining = Math.max(0, stmtAmount - paidAmount);
+    const dueDate = String(s.dueDate ?? "");
+    const card = data.creditCards.find((c) => c.id === s.creditCardId);
+    const cardName = card ? card.name : "Kartu Kredit";
+
+    if (remaining > 0) {
+      if (dueDate === today) {
+        out.push({
+          id: `derived-stmt-due-${s.id}`,
+          kind: "due",
+          title: `Statement ${cardName} jatuh tempo hari ini`,
+          body: `Tagihan statement ${cardName} sebesar Rp${remaining.toLocaleString("id-ID")} jatuh tempo hari ini.`,
+          linkTo: `/credit-card-statements/${s.id}`,
+          read: false,
+          createdAt: today,
+        });
+      } else if (dueDate < today) {
+        out.push({
+          id: `derived-stmt-overdue-${s.id}`,
+          kind: "overdue",
+          title: `Statement ${cardName} melewati jatuh tempo`,
+          body: `Tagihan statement ${cardName} sebesar Rp${remaining.toLocaleString("id-ID")} sudah melewati jatuh tempo.`,
+          linkTo: `/credit-card-statements/${s.id}`,
+          read: false,
+          createdAt: today,
+        });
+      } else if (dueDate <= in3Days && dueDate > today) {
+        out.push({
+          id: `derived-stmt-upcoming-${s.id}`,
+          kind: "due",
+          title: `Statement ${cardName} segera jatuh tempo`,
+          body: `Tagihan statement ${cardName} akan jatuh tempo pada ${dueDate}.`,
+          linkTo: `/credit-card-statements/${s.id}`,
+          read: false,
+          createdAt: today,
+        });
+      }
     }
   }
 

@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { PencilSimple, Trash, Paperclip, CaretRight } from "@phosphor-icons/react";
+import { PencilSimple, Trash, Paperclip, CaretRight, CreditCard as CreditCardIcon } from "@phosphor-icons/react";
 import { useApp } from "../../data/store";
-import { categoryById, memberById, walletById, billStatus } from "../../lib/derive";
+import { categoryById, isCreditCardSettlement, memberById, walletById, billStatus } from "../../lib/derive";
+import { identifyTransferPairs, isWalletTransfer } from "../../lib/transfer";
 import { formatIDR, terbilang } from "../../lib/format";
 import { fmtFullDateID } from "../../lib/dates";
 import { AmountInput, Avatar, Badge, Button, ConfirmDialog, Field, Input, Select, Sheet, useToast } from "../../components/ui";
@@ -21,6 +22,10 @@ export function TransactionDetailSheet({
   const [editing, setEditing] = useState(false);
 
   const tx = useMemo(() => data.transactions.find((t) => t.id === transactionId), [data, transactionId]);
+  const pairs = useMemo(() => identifyTransferPairs(data.transactions), [data.transactions]);
+  const pair = tx ? pairs.get(tx.id) : undefined;
+  const isTransfer = tx ? isWalletTransfer(tx) || Boolean(pair) : false;
+
   if (!tx) return <Sheet open={false} onClose={onClose} title="" />;
 
   const cat = categoryById(data, tx.categoryId);
@@ -30,13 +35,23 @@ export function TransactionDetailSheet({
   const bill = tx.billId ? data.bills.find((b) => b.id === tx.billId) : null;
   const inst = tx.installmentId ? data.installments.find((i) => i.id === tx.installmentId) : null;
 
-  const typeLabel = tx.type === "income" ? "Pemasukan" : tx.type === "expense" ? "Pengeluaran" : "Settlement Kartu Kredit";
+  const typeLabel = isTransfer ? "Transfer" : tx.type === "income" ? "Pemasukan" : tx.type === "expense" ? "Pengeluaran" : "Pembayaran Kartu Kredit";
+  const isSettlement = isCreditCardSettlement(tx);
+
+  const sourceWallet = pair ? walletById(data, pair.sourceWalletId) : wallet;
+  const destWallet = pair ? walletById(data, pair.destinationWalletId) : undefined;
 
   const handleDelete = () => {
-    deleteTransaction(tx.id);
+    if (pair) {
+      // Hapus KEDUA sisi ledger dari satu transfer.
+      deleteTransaction(pair.outgoing.id);
+      if (pair.incoming.id !== pair.outgoing.id) deleteTransaction(pair.incoming.id);
+    } else {
+      deleteTransaction(tx.id);
+    }
     setConfirmDel(false);
     onClose();
-    toast.push("success", "Transaksi dihapus");
+    toast.push("success", pair ? "Transfer dihapus" : "Transaksi dihapus");
   };
 
   return (
@@ -48,11 +63,13 @@ export function TransactionDetailSheet({
         footer={
           editing ? null : (
             <div className="flex gap-3">
-              <Button variant="secondary" className="flex-1" onClick={() => setEditing(true)}>
-                <PencilSimple size={16} weight="bold" /> Edit
-              </Button>
+              {!isSettlement && !isTransfer && (
+                <Button variant="secondary" className="flex-1" onClick={() => setEditing(true)}>
+                  <PencilSimple size={16} weight="bold" /> Edit
+                </Button>
+              )}
               <Button variant="danger" className="flex-1" onClick={() => setConfirmDel(true)}>
-                <Trash size={16} weight="bold" /> Hapus
+                <Trash size={16} weight="bold" /> {isTransfer ? "Hapus Transfer" : "Hapus"}
               </Button>
             </div>
           )
@@ -71,7 +88,7 @@ export function TransactionDetailSheet({
         ) : (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <Badge variant={tx.type === "income" ? "income" : tx.type === "expense" ? "expense" : "default"}>{typeLabel}</Badge>
+              <Badge variant={isTransfer ? "default" : tx.type === "income" ? "income" : tx.type === "expense" ? "expense" : "default"}>{typeLabel}</Badge>
               <div className="flex items-center gap-2 text-xs text-ink-muted">
                 {owner && (
                   <span className="flex items-center gap-1.5">
@@ -84,25 +101,43 @@ export function TransactionDetailSheet({
 
             <div>
               <p className="tnum text-4xl font-bold tracking-tight text-ink">
-                {tx.type === "expense" || tx.type === "credit_card_settlement" ? "−" : "+"}
+                {isTransfer ? "" : tx.type === "expense" || tx.type === "transfer" ? "−" : "+"}
                 {formatIDR(tx.amount)}
               </p>
               <p className="mt-1 text-xs font-medium text-brand-700 dark:text-brand-300">{terbilang(tx.amount)}</p>
             </div>
 
-            {tx.merchant && (
+            {isTransfer ? (
               <div className="rounded-xl bg-canvas p-3">
-                <p className="text-sm font-semibold text-ink">{tx.merchant}</p>
-                <p className="whitespace-pre-line text-xs text-ink-muted">{tx.description || "Tanpa keterangan"}</p>
+                <p className="text-sm font-semibold text-ink">
+                  {sourceWallet?.name ?? "Wallet asal"} → {destWallet?.name ?? "Wallet tujuan"}
+                </p>
+                <p className="text-xs text-ink-muted">Pemindahan dana antar wallet — tidak memengaruhi pemasukan/pengeluaran.</p>
               </div>
+            ) : (
+              tx.merchant && (
+                <div className="rounded-xl bg-canvas p-3">
+                  <p className="text-sm font-semibold text-ink">{tx.merchant}</p>
+                  <p className="whitespace-pre-line text-xs text-ink-muted">{tx.description || "Tanpa keterangan"}</p>
+                </div>
+              )
             )}
 
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-              <Detail label="Kategori" value={cat?.name ?? "—"} />
-              <Detail label="Wallet" value={wallet?.name ?? "—"} />
+              {isTransfer ? (
+                <>
+                  <Detail label="Dari" value={sourceWallet?.name ?? (tx.merchant || "—")} />
+                  <Detail label="Ke" value={destWallet?.name ?? "—"} />
+                </>
+              ) : (
+                <>
+                  <Detail label="Kategori" value={cat?.name ?? "—"} />
+                  <Detail label="Wallet" value={wallet?.name ?? "—"} />
+                </>
+              )}
               <Detail label="Tanggal" value={fmtFullDateID(tx.occurredAt)} />
               <Detail label="Metode" value={tx.paymentMethod ?? "—"} />
-              {tx.creditCardId && (
+              {!isTransfer && tx.creditCardId && (
                 <Detail label="Kartu kredit" value={data.creditCards.find((c) => c.id === tx.creditCardId)?.name ?? "—"} />
               )}
               <Detail label="Sumber" value={sourceLabel(tx.source)} />
@@ -153,8 +188,14 @@ export function TransactionDetailSheet({
 
       <ConfirmDialog
         open={confirmDel}
-        title="Hapus transaksi?"
-        body={`Transaksi "${tx.merchant || "Tanpa merchant"}" sebesar ${formatIDR(tx.amount)} akan dihapus permanen.`}        onConfirm={handleDelete}
+        title={isTransfer ? "Hapus transfer?" : "Hapus transaksi?"}
+        body={
+          isTransfer
+            ? `Transfer "${sourceWallet?.name ?? "Wallet asal"} → ${destWallet?.name ?? "Wallet tujuan"}" sebesar ${formatIDR(tx.amount)} akan dihapus dari kedua wallet (asal dan tujuan).`
+            : `Transaksi "${tx.merchant || "Tanpa merchant"}" sebesar ${formatIDR(tx.amount)} akan dihapus permanen.`
+        }
+        confirmLabel={isTransfer ? "Hapus Transfer" : "Hapus"}
+        onConfirm={handleDelete}
         onCancel={() => setConfirmDel(false)}
       />
     </>
@@ -179,7 +220,7 @@ function billStatusLabel(s: string): string {
     case "due_today":
       return "Jatuh tempo hari ini";
     case "overdue":
-      return "Overdue";
+      return "Terlambat";
     default:
       return "Belum dibayar";
   }
@@ -225,6 +266,8 @@ function EditForm({
   const [occurredAt, setOccurredAt] = useState(tx.occurredAt.slice(0, 10));
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | "">(tx.paymentMethod ?? "");
 
+  const isCcPurchase = tx.paymentMethod === "Credit Card" || Boolean(tx.creditCardId);
+  const card = tx.creditCardId ? data.creditCards.find((c) => c.id === tx.creditCardId) : null;
   const cats = data.categories.filter((c) => c.direction !== "income" || tx.type === "income");
 
   return (
@@ -244,15 +287,24 @@ function EditForm({
           ))}
         </Select>
       </Field>
-      <Field label="Wallet">
-        <Select value={walletId} onChange={(e) => setWalletId(e.target.value)}>
-          {data.wallets.map((w) => (
-            <option key={w.id} value={w.id}>
-              {w.name}
-            </option>
-          ))}
-        </Select>
-      </Field>
+      {isCcPurchase ? (
+        <div className="rounded-xl border border-brand-200 bg-brand-50 p-3 text-xs font-medium text-brand-700 dark:border-brand-800 dark:bg-brand-950/15 dark:text-brand-300">
+          <span className="flex items-center gap-2">
+            <CreditCardIcon size={15} weight="duotone" />
+            Pembelian via {card ? card.name : "kartu kredit"} — wallet tidak digunakan.
+          </span>
+        </div>
+      ) : (
+        <Field label="Wallet">
+          <Select value={walletId} onChange={(e) => setWalletId(e.target.value)}>
+            {data.wallets.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      )}
       <Field label="Tanggal">
         <Input type="date" value={occurredAt} onChange={(e) => setOccurredAt(e.target.value)} />
       </Field>
@@ -280,7 +332,8 @@ function EditForm({
               merchant,
               description,
               categoryId,
-              walletId,
+              // Pembelian kartu kredit: wallet tetap NULL (wallet isolation).
+              walletId: (paymentMethod === "Credit Card" || isCcPurchase ? null : walletId) as any,
               occurredAt,
               paymentMethod: paymentMethod || null,
             })

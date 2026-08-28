@@ -182,7 +182,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           source: input.source ?? "manual",
           amount: input.amount,
           categoryId: input.categoryId,
-          walletId: input.walletId,
+          walletId: input.walletId ?? "",
           paymentMethod: input.paymentMethod,
           creditCardId: input.creditCardId,
           occurredAt: input.occurredAt,

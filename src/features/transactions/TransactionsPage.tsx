@@ -1,7 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { MagnifyingGlass, Receipt } from "@phosphor-icons/react";
 import { useApp } from "../../data/store";
 import { filterTransactions } from "../../lib/derive";
+import { identifyTransferPairs, buildLogicalTransferRows } from "../../lib/transfer";
 import { Card, EmptyState, Pagination, Skeleton, usePagination } from "../../components/ui";
 import { PageHeader, FilterChip, useFilter as useFilterCtx } from "../../components/layout";
 import { TransactionList } from "../../components/TransactionList";
@@ -9,10 +11,30 @@ import { TransactionDetailSheet } from "./TransactionDetail";
 
 export function TransactionsPage() {
   const { data, activeProfileId } = useApp();
-  const { filter, openFilter } = useFilterCtx();
+  const { filter, setFilter, openFilter } = useFilterCtx();
+  const [searchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [loading] = useState(false);
+
+  // Deep-link dari dashboard
+  useEffect(() => {
+    const type = searchParams.get("type");
+    const categoryId = searchParams.get("categoryId");
+    const walletId = searchParams.get("walletId");
+    if (type === "income" || type === "expense" || categoryId || walletId) {
+      setFilter({
+        ...filter,
+        type: type === "income" ? "income" : type === "expense" ? "expense" : filter.type,
+        categoryId: categoryId ?? filter.categoryId,
+        walletId: walletId ?? filter.walletId,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Pasangan transfer wallet — pakai seluruh data agar pairing deterministik
+  const allPairs = useMemo(() => identifyTransferPairs(data.transactions), [data.transactions]);
 
   const filtered = useMemo(() => {
     let ts = filterTransactions(data, filter, activeProfileId);
@@ -25,7 +47,10 @@ export function TransactionsPage() {
     return [...ts].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
   }, [data, filter, activeProfileId, search]);
 
-  const { pageItems, page, total, totalPages, setPage } = usePagination(filtered, 20);
+  // Baris logis: pasangan transfer dihitung SATU kali (bukan dua).
+  const logicalRows = useMemo(() => buildLogicalTransferRows(filtered, allPairs), [filtered, allPairs]);
+
+  const { pageItems, page, total, totalPages, setPage } = usePagination(logicalRows, 20);
 
   return (
     <div>

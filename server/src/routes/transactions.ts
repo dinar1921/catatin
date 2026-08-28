@@ -4,6 +4,15 @@ import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { sv, svs, nid } from "../db/sql.js";
 import { logActivity } from "../services/audit.js";
+import {
+  assertCategoryOwnership,
+  assertCreditCardOwnership,
+  assertCreditCardScope,
+  assertProfileOwnership,
+  assertWalletOwnership,
+  firstValidationError,
+} from "../validation.js";
+import { resolveOrCreateStatement } from "../services/statement-domain.js";
 
 const router = Router();
 
@@ -20,10 +29,12 @@ const billSchema = z.object({
 });
 
 const createTxSchema = z.object({
-  type: z.enum(["income", "expense", "credit_card_settlement"]),
+  type: z.enum(["income", "expense", "transfer"]),
   amount: z.number().min(1),
   categoryId: z.string(),
-  walletId: z.string(),
+  // walletId bersifat opsional: wajib untuk transaksi biasa, TIDAK boleh ada
+  // untuk pembelian kartu kredit (Phase 2 — wallet isolation).
+  walletId: z.string().nullable().optional(),
   paymentMethod: z.string().nullable().optional(),
   creditCardId: z.string().nullable().optional(),
   occurredAt: z.string(),
@@ -35,6 +46,34 @@ const createTxSchema = z.object({
   items: z.array(itemSchema).optional().default([]),
   bill: billSchema.nullable().optional(),
 });
+
+/**
+ * Validasi kepemilikan + aturan wallet/kartu kredit.
+ * Mengembalikan null bila valid, atau pesan error untuk response 400.
+ */
+function validateCreateTx(
+  input: z.infer<typeof createTxSchema>,
+  groupId: string,
+): string | null {
+  const isCreditCard = input.paymentMethod === "Credit Card";
+
+  // Kartu kredit: creditCardId wajib, wallet TIDAK boleh diisi.
+  if (isCreditCard) {
+    if (!input.creditCardId) return "Kartu kredit wajib diisi untuk metode Credit Card";
+    if (input.walletId) return "Wallet tidak diperlukan untuk transaksi kartu kredit.";
+  } else if (!input.walletId) {
+    return "Wallet wajib diisi untuk transaksi biasa";
+  }
+
+  return firstValidationError([
+    () => assertCategoryOwnership(db, input.categoryId, groupId),
+    () => assertProfileOwnership(db, input.ownerProfileId, groupId),
+    () => assertWalletOwnership(db, input.walletId, groupId),
+    () => assertCreditCardOwnership(db, input.creditCardId, groupId),
+    // R07-B: scope personal → hanya pemilik kartu yang boleh memakai.
+    () => assertCreditCardScope(db, input.creditCardId, groupId, input.ownerProfileId),
+  ]);
+}
 
 function todayISO(): string {
   const d = new Date();
@@ -78,8 +117,30 @@ router.post("/", requireAuth, (req: Request, res: Response) => {
   }
   const input = parsed.data;
   const groupId = req.groupId!;
+
+  // ---- Ownership + wallet-isolation validation (Phase 1/2) ----
+  const validationError = validateCreateTx(input, groupId);
+  if (validationError) {
+    res.status(400).json({ error: validationError });
+    return;
+  }
+
+  const isCreditCard = input.paymentMethod === "Credit Card";
+  // walletId TIDAK disimpan untuk pembelian kartu kredit (wallet isolation).
+  const effectiveWalletId = isCreditCard ? null : (input.walletId ?? null);
+
   const txId = nid("t");
   const now = new Date().toISOString();
+
+  // ---- Phase 5 / 10: Resolution & Cutoff Statement Kartu Kredit ----
+  let statementId: string | null = null;
+  if (input.creditCardId) {
+    try {
+      statementId = resolveOrCreateStatement(db, groupId, input.creditCardId, input.occurredAt);
+    } catch {
+      statementId = null;
+    }
+  }
 
   db.exec("BEGIN");
   try {
@@ -105,12 +166,25 @@ router.post("/", requireAuth, (req: Request, res: Response) => {
       }
     }
 
-    db.prepare(`INSERT INTO transactions (id, group_id, type, source, amount, category_id, wallet_id, payment_method, credit_card_id, occurred_at, merchant, description, owner_profile_id, created_by, bill_id, installment_id, attachment_json, items_json, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(sv(txId), sv(groupId), sv(input.type), sv(input.source), sv(input.amount), sv(input.categoryId), sv(input.walletId),
-        sv(input.paymentMethod ?? null), sv(input.creditCardId ?? null), sv(input.occurredAt), sv(input.merchant), sv(input.description ?? ""),
+    db.prepare(`INSERT INTO transactions (id, group_id, type, source, amount, category_id, wallet_id, payment_method, credit_card_id, statement_id, occurred_at, merchant, description, owner_profile_id, created_by, bill_id, installment_id, attachment_json, items_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(sv(txId), sv(groupId), sv(input.type), sv(input.source), sv(input.amount), sv(input.categoryId), sv(effectiveWalletId),
+        sv(input.paymentMethod ?? null), sv(input.creditCardId ?? null), sv(statementId), sv(input.occurredAt), sv(input.merchant), sv(input.description ?? ""),
         sv(input.ownerProfileId), sv(req.profile!.id), sv(billId), sv(installmentId),
         input.attachment ? JSON.stringify(input.attachment) : null, JSON.stringify(input.items ?? []), now);
+
+    // ---- Phase 1 & 2: Buat statement item secara atomis bila transaksi memiliki statement_id ----
+    if (statementId && input.type === "expense" && input.creditCardId) {
+      const csiId = nid("csi");
+      const itemDesc = input.merchant
+        ? `${input.merchant}${input.description ? ` · ${input.description}` : ""}`
+        : (input.description || "Belanja Kartu Kredit");
+
+      db.prepare(
+        `INSERT INTO credit_card_statement_items (id, group_id, statement_id, transaction_id, amount, item_type, description, created_at)
+         VALUES (?, ?, ?, ?, ?, 'purchase', ?, ?)`,
+      ).run(sv(csiId), sv(groupId), sv(statementId), sv(txId), sv(input.amount), sv(itemDesc), now);
+    }
 
     db.exec("COMMIT");
     logActivity(groupId, req.profile!.id, "transaction.create", { transactionId: txId, type: input.type, amount: input.amount });
@@ -132,6 +206,24 @@ router.patch("/:id", requireAuth, (req: Request, res: Response) => {
     return;
   }
   const patch = req.body ?? {};
+
+  // ---- Ownership validation untuk field yang diubah (Phase 1) ----
+  const patchErr = firstValidationError([
+    () => assertCategoryOwnership(db, patch.categoryId, groupId),
+    () => assertProfileOwnership(db, patch.ownerProfileId, groupId),
+    () => assertWalletOwnership(db, patch.walletId, groupId),
+    () => assertCreditCardOwnership(db, patch.creditCardId, groupId),
+  ]);
+  if (patchErr) {
+    res.status(400).json({ error: patchErr });
+    return;
+  }
+  // Wallet isolation berlaku juga saat update: transaksi kartu kredit tanpa wallet.
+  if (patch.paymentMethod === "Credit Card" && patch.walletId) {
+    res.status(400).json({ error: "Wallet tidak diperlukan untuk transaksi kartu kredit." });
+    return;
+  }
+
   const fields = ["type", "amount", "categoryId", "walletId", "paymentMethod", "occurredAt", "merchant", "description", "ownerProfileId"];
   const setClauses: string[] = [];
   const params: unknown[] = [];
@@ -160,6 +252,15 @@ router.patch("/:id", requireAuth, (req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
+/** True bila transaksi adalah settlement kartu kredit (old credit_card_settlement
+ *  maupun transfer + transfer_type=credit_card_payment). */
+function isSettlementTransaction(t: Record<string, unknown>): boolean {
+  return (
+    t.type === "credit_card_settlement" ||
+    (t.type === "transfer" && t.transfer_type === "credit_card_payment")
+  );
+}
+
 /** DELETE /api/transactions/:id — hapus + restore bill/installment/statement */
 router.delete("/:id", requireAuth, (req: Request, res: Response) => {
   const { id } = req.params;
@@ -172,15 +273,56 @@ router.delete("/:id", requireAuth, (req: Request, res: Response) => {
 
   db.exec("BEGIN");
   try {
+    // Phase 15: Hapus statement item yang terhubung dengan transaksi ini
+    db.prepare("DELETE FROM credit_card_statement_items WHERE transaction_id = ? AND group_id = ?").run(sv(id), sv(groupId));
+
     if (t.bill_id) {
-      const billAmt = (t.type === "expense" || t.type === "credit_card_settlement") ? Number(t.amount ?? 0) : 0;
+      const billAmt = (t.type === "expense" || isSettlementTransaction(t)) ? Number(t.amount ?? 0) : 0;
       db.prepare("UPDATE bills SET paid_amount = MAX(0, paid_amount - ?) WHERE id = ? AND group_id = ?").run(sv(billAmt), sv(t.bill_id), sv(groupId));
     }
-    if (t.credit_card_id && t.type === "credit_card_settlement") {
-      db.prepare("UPDATE statements SET paid_amount = MAX(0, paid_amount - ?) WHERE credit_card_id = ? AND group_id = ?").run(sv(t.amount ?? 0), sv(t.credit_card_id), sv(groupId));
+    if (t.credit_card_id && isSettlementTransaction(t)) {
+      // Revision 01 (P0.1): reversal harus menarget statement EKSAK (statement_id).
+      // Settlement lama yang tidak dapat diasosiasikan ke statement tertentu
+      // TIDAK ditebak — skip aman dan dilaporkan ke audit log.
+      const stmtId = (t.statement_id as string | null) ?? null;
+      if (stmtId) {
+        const stmt = db
+          .prepare("SELECT id, credit_card_id FROM statements WHERE id = ? AND group_id = ?")
+          .get(stmtId, groupId) as { id: string; credit_card_id: string | null } | undefined;
+        if (stmt && (!t.credit_card_id || stmt.credit_card_id === t.credit_card_id)) {
+          db.prepare("UPDATE statements SET paid_amount = MAX(0, paid_amount - ?) WHERE id = ? AND group_id = ?")
+            .run(sv(t.amount ?? 0), sv(stmtId), sv(groupId));
+        } else {
+          logActivity(groupId, req.profile!.id, "transaction.delete.skip_statement", {
+            transactionId: id,
+            reason: "statement_mismatch",
+          });
+        }
+      } else {
+        logActivity(groupId, req.profile!.id, "transaction.delete.skip_statement", {
+          transactionId: id,
+          reason: "no_statement_id",
+        });
+      }
     }
     if (t.installment_id) {
-      db.prepare("UPDATE installments SET paid_count = MAX(0, paid_count - 1) WHERE id = ? AND group_id = ?").run(sv(t.installment_id), sv(groupId));
+      // Phase 4: hitung ulang status cicilan secara deterministik dari
+      // paid_amount bill (tidak menebak histori). paid_count = jumlah periode
+      // penuh, paid_amount = sisa pembayaran parsial.
+      const inst = db
+        .prepare("SELECT id, installment_amount, tenor FROM installments WHERE id = ? AND group_id = ?")
+        .get(sv(t.installment_id), sv(groupId)) as { id: string; installment_amount: number; tenor: number } | undefined;
+      const billRow = t.bill_id
+        ? (db.prepare("SELECT paid_amount FROM bills WHERE id = ? AND group_id = ?").get(sv(t.bill_id), sv(groupId)) as { paid_amount: number } | undefined)
+        : undefined;
+      if (inst && billRow) {
+        const installmentAmount = Number(inst.installment_amount ?? 0);
+        const totalPaid = Number(billRow.paid_amount ?? 0);
+        const periods = installmentAmount > 0 ? Math.floor(totalPaid / installmentAmount) : 0;
+        const remainder = installmentAmount > 0 ? totalPaid % installmentAmount : totalPaid;
+        db.prepare("UPDATE installments SET paid_count = MIN(?, tenor), paid_amount = ? WHERE id = ? AND group_id = ?")
+          .run(sv(Math.min(periods, Number(inst.tenor ?? 0))), sv(remainder), sv(t.installment_id), sv(groupId));
+      }
     }
     db.prepare("DELETE FROM transactions WHERE id = ? AND group_id = ?").run(id, groupId);
     db.exec("COMMIT");

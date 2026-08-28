@@ -10,6 +10,8 @@ import type {
   PaymentMethod,
   Transaction,
   Wallet,
+  UnifiedBillsResponse,
+  UnifiedBillDetailResponse,
 } from "./types";
 
 const BASE = "/api";
@@ -220,10 +222,61 @@ export function deleteMember(id: string): Promise<{ ok: boolean }> {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Bills (pay)                                                        */
+/*  Bills (unified & pay)                                              */
 /* ------------------------------------------------------------------ */
+export function getUnifiedBills(params?: { type?: string; status?: string; profileId?: string; from?: string; to?: string; q?: string }): Promise<UnifiedBillsResponse> {
+  const qs = params
+    ? "?" +
+      new URLSearchParams(
+        Object.entries(params)
+          .filter(([, v]) => v !== undefined && v !== "")
+          .map(([k, v]) => [k, String(v!)]),
+      ).toString()
+    : "";
+  return request("GET", `/bills${qs}`);
+}
+
+export function getUnifiedBillDetail(id: string): Promise<UnifiedBillDetailResponse> {
+  return request("GET", `/bills/${id}`);
+}
+
+export interface CreateBillInput {
+  type: "debt" | "receivable" | "regular" | "recurring" | "installment";
+  title: string;
+  amount: number;
+  counterparty?: string;
+  dueDate?: string | null;
+  dueDay?: number | null;
+  frequency?: string | null;
+  categoryId?: string | null;
+  ownerProfileId?: string | null;
+  notes?: string;
+  tenor?: number | null;
+  installmentAmount?: number | null;
+}
+
+export function createBill(input: CreateBillInput): Promise<{ id: string }> {
+  return request("POST", "/bills", input);
+}
+
 export function payBill(id: string, opts: { amount: number; walletId: string; method: PaymentMethod | null; full?: boolean }): Promise<{ id: string; paid: number }> {
   return request("POST", `/bills/${id}/pay`, opts);
+}
+
+export function payInstallmentFull(id: string, opts: { walletId: string }): Promise<{ id: string; paid: number }> {
+  return request("POST", `/installments/${id}/pay-full`, opts);
+}
+
+export function getCreditCards(): Promise<{ creditCards: any[] }> {
+  return request("GET", "/credit-cards");
+}
+
+export function getCreditCardStatementDetail(id: string): Promise<{ statement: any; items: any[] }> {
+  return request("GET", `/credit-card-statements/${id}`);
+}
+
+export function payCreditCardStatement(id: string, opts: { amount: number; walletId: string }): Promise<{ id: string; paid: number }> {
+  return request("POST", `/credit-card-statements/${id}/pay`, opts);
 }
 
 /* ------------------------------------------------------------------ */

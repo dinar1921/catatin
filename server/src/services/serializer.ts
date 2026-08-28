@@ -72,6 +72,7 @@ export function getGroupData(groupId: string): AppData {
     })),
     transactions: transactions.map((t) => ({
       id: t.id,
+      groupId: t.group_id,
       type: t.type,
       source: t.source,
       amount: t.amount,
@@ -79,6 +80,8 @@ export function getGroupData(groupId: string): AppData {
       walletId: t.wallet_id,
       paymentMethod: t.payment_method,
       creditCardId: t.credit_card_id,
+      transferType: t.transfer_type,
+      statementId: t.statement_id,
       occurredAt: t.occurred_at,
       merchant: t.merchant,
       description: t.description,
@@ -99,6 +102,7 @@ export function getGroupData(groupId: string): AppData {
       categoryId: b.category_id,
       walletId: b.wallet_id,
       creditCardId: b.credit_card_id,
+      statementId: b.statement_id,
       counterparty: b.counterparty,
       frequency: b.frequency,
       dueDay: b.due_day,
@@ -116,6 +120,7 @@ export function getGroupData(groupId: string): AppData {
       installmentAmount: i.installment_amount,
       tenor: i.tenor,
       paidCount: i.paid_count,
+      paidAmount: i.paid_amount,
       startDate: i.start_date,
       dueDay: i.due_day,
     })),
@@ -127,6 +132,8 @@ export function getGroupData(groupId: string): AppData {
       statementDay: c.statement_day,
       dueDay: c.due_day,
       creditLimit: c.credit_limit,
+      ownerProfileId: c.owner_profile_id,
+      scope: c.scope,
     })),
     statements: statements.map((s) => ({
       id: s.id,
@@ -177,18 +184,20 @@ interface ProfileRow { id: string; group_id: string; name: string; email: string
 interface WalletRow { id: string; group_id: string; name: string; owner_profile_id: string | null; scope: "personal" | "shared" }
 interface CategoryRow { id: string; group_id: string; name: string; direction: "income" | "expense" | "both"; is_default: number }
 interface TransactionRow {
-  id: string; type: "income" | "expense" | "credit_card_settlement"; source: string; amount: number;
+  id: string; group_id: string; type: "income" | "expense" | "transfer"; source: string; amount: number;
   category_id: string | null; wallet_id: string | null; payment_method: string | null; credit_card_id: string | null;
+  transfer_type: string | null;
+  statement_id: string | null;
   occurred_at: string; merchant: string; description: string; owner_profile_id: string | null; created_by: string | null;
   bill_id: string | null; installment_id: string | null; attachment_json: string | null; items_json: string; created_at: string;
 }
 interface BillRow {
   id: string; title: string; type: string; amount: number; paid_amount: number; category_id: string | null; wallet_id: string | null;
-  credit_card_id: string | null; counterparty: string | null; frequency: string | null; due_day: number | null; due_date: string | null;
+  credit_card_id: string | null; statement_id: string | null; counterparty: string | null; frequency: string | null; due_day: number | null; due_date: string | null;
   last_paid_period: string | null; is_active: number; owner_profile_id: string | null; notes: string;
 }
-interface InstallmentRow { id: string; bill_id: string | null; title: string; total_amount: number; installment_amount: number; tenor: number; paid_count: number; start_date: string; due_day: number }
-interface CreditCardRow { id: string; name: string; issuer: string; last_four: string; statement_day: number; due_day: number; credit_limit: number }
+interface InstallmentRow { id: string; bill_id: string | null; title: string; total_amount: number; installment_amount: number; tenor: number; paid_count: number; paid_amount: number; start_date: string; due_day: number }
+interface CreditCardRow { id: string; name: string; issuer: string; last_four: string; statement_day: number; due_day: number; credit_limit: number; owner_profile_id: string | null; scope: string }
 interface StatementRow { id: string; credit_card_id: string | null; period_start: string; period_end: string; statement_amount: number; paid_amount: number; due_date: string; status: string }
 interface BudgetRow { id: string; category_id: string | null; amount: number; owner_profile_id: string | null }
 interface DraftRow {
