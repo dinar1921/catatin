@@ -127,6 +127,7 @@ export function applySchema(db: DatabaseSync): void {
       amount INTEGER NOT NULL,
       item_type TEXT NOT NULL CHECK (item_type IN ('purchase','installment','fee','interest','refund','adjustment')),
       description TEXT NOT NULL DEFAULT '',
+      paid_by_transaction_id TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(statement_id, transaction_id)
     );

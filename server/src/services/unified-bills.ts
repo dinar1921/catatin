@@ -149,6 +149,8 @@ export function getUnifiedBills(
   },
 ): UnifiedBillsResponse {
   const today = todayISO();
+  // R09.1: GET read-only — slice periode berjalan dihitung DERIVED (bukan dimaterialisasi).
+
   const rawBills = db
     .prepare("SELECT * FROM bills WHERE group_id = ? AND is_active = 1 ORDER BY due_day ASC, id ASC")
     .all(groupId) as Record<string, unknown>[];
@@ -243,6 +245,12 @@ export function getUnifiedBills(
 
       const remainingAmount = Math.max(0, amount - (paidCount * installmentAmount + instPaidAmount));
 
+      // R09: cicilan kartu kredit — jadwal vs kewajiban terpisah.
+      // Sisa periode berjalan diwakili oleh statement kartu kredit (payable),
+      // sehingga remainingAmount di sini TIDAK dijumlahkan dua kali di summary.
+      // Item cicilan tetap tampil sebagai progress/schedule (metadata + display).
+      const fundedByCc = Boolean(creditCardId);
+
       items.push({
         id,
         domainType: "installment",
@@ -251,7 +259,7 @@ export function getUnifiedBills(
         title: instTitle,
         amount: status === "completed" ? 0 : installmentAmount,
         paidAmount: instPaidAmount,
-        remainingAmount: status === "completed" ? 0 : Math.max(0, installmentAmount - instPaidAmount),
+        remainingAmount: fundedByCc ? 0 : status === "completed" ? 0 : Math.max(0, installmentAmount - instPaidAmount),
         dueDate: computedDueDate,
         dueDay,
         status,
@@ -269,6 +277,7 @@ export function getUnifiedBills(
           paidAmount: instPaidAmount,
           remainingTotalLiability: remainingAmount,
           progressText: `${paidCount}/${tenor} Bulan`,
+          fundedByCc,
           notes,
         },
       });
@@ -355,13 +364,18 @@ export function getUnifiedBills(
     }
   }
 
-  // Tambahkan Statement Kartu Kredit yang belum dibuatkan record `bills`-nya (bila ada)
+  // Tambahkan Statement Kartu Kredit yang belum dibuatkan record `bills`-nya (bila ada).
+  // Catatan: bill cicilan kartu kredit kini punya statement_id (traceability R09) —
+  // relasi itu TIDAK boleh menekan kemunculan statement sebagai item payable.
   const ccStatements = db
     .prepare(
       `SELECT s.id FROM statements s
        JOIN credit_cards cc ON cc.id = s.credit_card_id
        WHERE s.group_id = ? AND s.status IN ('open','issued','overdue')
-         AND s.id NOT IN (SELECT statement_id FROM bills WHERE group_id = ? AND statement_id IS NOT NULL)`,
+         AND s.id NOT IN (
+           SELECT statement_id FROM bills
+           WHERE group_id = ? AND statement_id IS NOT NULL AND type = 'credit_card_statement'
+         )`,
     )
     .all(groupId, groupId) as { id: string }[];
 

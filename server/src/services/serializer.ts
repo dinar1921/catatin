@@ -1,4 +1,5 @@
 import { db } from "../db/index.js";
+import { getStatementCalc } from "./statement-domain.js";
 
 function parseJson<T>(s: string | null | undefined, fallback: T): T {
   if (!s) return fallback;
@@ -135,16 +136,25 @@ export function getGroupData(groupId: string): AppData {
       ownerProfileId: c.owner_profile_id,
       scope: c.scope,
     })),
-    statements: statements.map((s) => ({
-      id: s.id,
-      creditCardId: s.credit_card_id,
-      periodStart: s.period_start,
-      periodEnd: s.period_end,
-      statementAmount: s.statement_amount,
-      paidAmount: s.paid_amount,
-      dueDate: s.due_date,
-      status: s.status,
-    })),
+    statements: statements.map((s) => {
+      // R09: ekspos nilai statement TERHITUNG (derived/official-aware) agar frontend
+      // tidak menghitung ulang finansial. Kolom statement_amount bisa 0 untuk
+      // statement hasil derivasi; remaining/status dihitung di backend.
+      const calc = getStatementCalc(db, s.id);
+      return {
+        id: s.id,
+        creditCardId: s.credit_card_id,
+        periodStart: s.period_start,
+        periodEnd: s.period_end,
+        statementAmount: calc ? calc.statementAmount : s.statement_amount,
+        officialAmount: calc ? calc.officialAmount : (s as unknown as { official_amount: number | null }).official_amount,
+        derivedAmount: calc ? calc.derivedAmount : undefined,
+        paidAmount: calc ? calc.paidAmount : s.paid_amount,
+        remainingAmount: calc ? calc.remainingAmount : Math.max(0, s.statement_amount - s.paid_amount),
+        dueDate: s.due_date,
+        status: calc ? calc.status : s.status,
+      };
+    }),
     budgets: budgets.map((b) => ({
       id: b.id,
       categoryId: b.category_id,

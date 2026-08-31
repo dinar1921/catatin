@@ -202,3 +202,156 @@ test("deterministic backfill: one open statement covering the transaction date",
     db.close();
   }
 });
+
+test("migration 008: CC installment full-principal item on unpaid statement → slice, deterministic", () => {
+  const { db, dir } = openTempDb();
+  try {
+    // Legacy R09-bug data (inserted BEFORE migration):
+    // - transaction CC expense tanpa statement_id (kolom ditambahkan migrasi 001)
+    // - bill installment terhubung kartu, statement unpaid
+    // Migrasi 001/005/007 akan: assign statement_id + backfill item purchase = full principal,
+    // lalu migrasi 008 memperbaiki item menjadi slice periode.
+    db.prepare("INSERT INTO groups (id, name, owner_profile_id) VALUES ('g', 'Test', 'p')").run();
+    db.prepare("INSERT INTO profiles (id, group_id, name, email, role, is_active, color) VALUES ('p', 'g', 'Test', 't@t.com', 'admin', 1, '#000')").run();
+    db.prepare("INSERT INTO credit_cards (id, group_id, name, issuer, last_four, statement_day, due_day, credit_limit) VALUES ('cc', 'g', 'Test CC', 'Test', '0000', 30, 15, 10000000)").run();
+    db.prepare("INSERT INTO statements (id, group_id, credit_card_id, period_start, period_end, statement_amount, paid_amount, due_date, status) VALUES ('st', 'g', 'cc', '2026-07-01', '2026-07-30', 6000000, 0, '2026-08-15', 'open')").run();
+    db.prepare("INSERT INTO bills (id, group_id, title, type, amount, paid_amount, category_id, credit_card_id, is_active, owner_profile_id, notes) VALUES ('b', 'g', 'Laptop', 'installment', 6000000, 0, 'c', 'cc', 1, 'p', '')").run();
+    db.prepare("INSERT INTO installments (id, group_id, bill_id, title, total_amount, installment_amount, tenor, paid_count, start_date, due_day) VALUES ('i', 'g', 'b', 'Laptop', 6000000, 500000, 12, 0, '2026-07-01', 15)").run();
+    db.prepare("INSERT INTO transactions (id, group_id, type, amount, category_id, credit_card_id, bill_id, installment_id, occurred_at, merchant, description, owner_profile_id, created_by) VALUES ('tx', 'g', 'expense', 6000000, 'c', 'cc', 'b', 'i', '2026-07-01', 'Laptop', '', 'p', 'p')").run();
+
+    const v = runMigrations(db);
+    assert.ok(v >= 8, "migration 008 applied");
+
+    const item = db.prepare(
+      "SELECT amount, item_type FROM credit_card_statement_items WHERE transaction_id = 'tx'",
+    ).get() as { amount: number; item_type: string };
+    assert.equal(item.item_type, "installment", "item menjadi installment");
+    assert.equal(item.amount, 500000, "item menjadi slice periode");
+
+    const bill = db.prepare("SELECT statement_id FROM bills WHERE id = 'b'").get() as { statement_id: string | null };
+    assert.equal(bill.statement_id, "st", "bill cicilan terhubung statement deterministik");
+
+    // Idempoten
+    const v2 = runMigrations(db);
+    assert.equal(v2, v);
+    const item2 = db.prepare("SELECT amount FROM credit_card_statement_items WHERE transaction_id = 'tx'").get() as { amount: number };
+    assert.equal(item2.amount, 500000);
+  } finally {
+    db.close();
+  }
+});
+
+test("migration 009: duplicate statements deduped deterministically + unique index", () => {
+  const { db, dir } = openTempDb();
+  try {
+    db.prepare("INSERT INTO groups (id, name, owner_profile_id) VALUES ('g', 'Test', 'p')").run();
+    db.prepare("INSERT INTO profiles (id, group_id, name, email, role, is_active, color) VALUES ('p', 'g', 'Test', 't@t.com', 'admin', 1, '#000')").run();
+    db.prepare("INSERT INTO credit_cards (id, group_id, name, issuer, last_four, statement_day, due_day, credit_limit) VALUES ('cc', 'g', 'Test CC', 'Test', '0000', 30, 15, 10000000)").run();
+    // Duplikat: dua statement periode sama (mis. hasil race GET lama)
+    db.prepare("INSERT INTO statements (id, group_id, credit_card_id, period_start, period_end, statement_amount, paid_amount, due_date, status) VALUES ('st-1', 'g', 'cc', '2026-07-01', '2026-07-30', 500000, 500000, '2026-08-15', 'paid')").run();
+    db.prepare("INSERT INTO statements (id, group_id, credit_card_id, period_start, period_end, statement_amount, paid_amount, due_date, status) VALUES ('st-2', 'g', 'cc', '2026-07-01', '2026-07-30', 0, 0, '2026-08-15', 'open')").run();
+    db.prepare("INSERT INTO transactions (id, group_id, type, amount, category_id, wallet_id, credit_card_id, occurred_at, merchant, owner_profile_id, created_by) VALUES ('tx', 'g', 'expense', 500000, 'c', 'w', 'cc', '2026-07-10', 'Test', 'p', 'p')").run();
+
+    const v = runMigrations(db);
+    assert.ok(v >= 9, "migration 009 applied");
+
+    // Satu statement tersisa (yang paling awal — st-1, berisi data paid)
+    const remaining = db.prepare("SELECT id FROM statements WHERE group_id = 'g' AND credit_card_id = 'cc' AND period_start = '2026-07-01' AND period_end = '2026-07-30'").all() as { id: string }[];
+    assert.equal(remaining.length, 1, "hanya satu statement per periode");
+    assert.equal(remaining[0].id, "st-1", "statement paling awal dipertahankan");
+
+    // Index unik ada
+    assert.ok(indexExists(db, "idx_statements_period_unique"), "idx_statements_period_unique ada");
+
+    // Insert periode duplikat baru DITOLAK (constraint bekerja)
+    assert.throws(() => {
+      db.prepare(
+        "INSERT INTO statements (id, group_id, credit_card_id, period_start, period_end, statement_amount, paid_amount, due_date, status) VALUES ('st-3', 'g', 'cc', '2026-07-01', '2026-07-30', 0, 0, '2026-08-15', 'open')",
+      ).run();
+    }, /UNIQUE/, "duplicate period ditolak oleh constraint");
+
+    // Idempotent
+    const v2 = runMigrations(db);
+    assert.equal(v2, v);
+  } finally {
+    db.close();
+  }
+});
+
+test("migration 008: full-principal item pada statement PAID dibiarkan (ambigu, tidak ditebak)", () => {
+  const { db, dir } = openTempDb();
+  try {
+    db.prepare("INSERT INTO groups (id, name, owner_profile_id) VALUES ('g', 'Test', 'p')").run();
+    db.prepare("INSERT INTO profiles (id, group_id, name, email, role, is_active, color) VALUES ('p', 'g', 'Test', 't@t.com', 'admin', 1, '#000')").run();
+    db.prepare("INSERT INTO credit_cards (id, group_id, name, issuer, last_four, statement_day, due_day, credit_limit) VALUES ('cc', 'g', 'Test CC', 'Test', '0000', 30, 15, 10000000)").run();
+    // Statement sudah dibayar penuh (paid_amount = statement_amount)
+    db.prepare("INSERT INTO statements (id, group_id, credit_card_id, period_start, period_end, statement_amount, paid_amount, due_date, status) VALUES ('st', 'g', 'cc', '2026-07-01', '2026-07-30', 6000000, 6000000, '2026-08-15', 'paid')").run();
+    db.prepare("INSERT INTO bills (id, group_id, title, type, amount, paid_amount, category_id, credit_card_id, is_active, owner_profile_id, notes) VALUES ('b', 'g', 'Laptop', 'installment', 6000000, 0, 'c', 'cc', 1, 'p', '')").run();
+    db.prepare("INSERT INTO installments (id, group_id, bill_id, title, total_amount, installment_amount, tenor, paid_count, start_date, due_day) VALUES ('i', 'g', 'b', 'Laptop', 6000000, 500000, 12, 0, '2026-07-01', 15)").run();
+    db.prepare("INSERT INTO transactions (id, group_id, type, amount, category_id, credit_card_id, bill_id, installment_id, occurred_at, merchant, description, owner_profile_id, created_by) VALUES ('tx', 'g', 'expense', 6000000, 'c', 'cc', 'b', 'i', '2026-07-01', 'Laptop', '', 'p', 'p')").run();
+
+    const v = runMigrations(db);
+    assert.ok(v >= 8);
+
+    // Tidak diubah — historis pada statement yang sudah dibayar tidak ditebak.
+    const item = db.prepare(
+      "SELECT amount, item_type FROM credit_card_statement_items WHERE transaction_id = 'tx'",
+    ).get() as { amount: number; item_type: string };
+    assert.equal(item.amount, 6000000, "item pada statement paid tidak diubah");
+    assert.equal(item.item_type, "purchase");
+  } finally {
+    db.close();
+  }
+});
+
+test("migration 010: full-principal item on UNPAID statement converted deterministically (idempotent)", () => {
+  const { db, dir } = openTempDb();
+  try {
+    db.prepare("INSERT INTO groups (id, name, owner_profile_id) VALUES ('g', 'Test', 'p')").run();
+    db.prepare("INSERT INTO profiles (id, group_id, name, email, role, is_active, color) VALUES ('p', 'g', 'Test', 't@t.com', 'admin', 1, '#000')").run();
+    db.prepare("INSERT INTO credit_cards (id, group_id, name, issuer, last_four, statement_day, due_day, credit_limit) VALUES ('cc', 'g', 'Test CC', 'Test', '0000', 30, 15, 10000000)").run();
+    db.prepare("INSERT INTO statements (id, group_id, credit_card_id, period_start, period_end, statement_amount, paid_amount, due_date, status) VALUES ('st', 'g', 'cc', '2026-07-31', '2026-08-30', 0, 0, '2026-09-15', 'open')").run();
+    db.prepare("INSERT INTO bills (id, group_id, title, type, amount, paid_amount, category_id, credit_card_id, is_active, owner_profile_id, notes) VALUES ('b', 'g', 'Laptop', 'installment', 6000000, 0, 'c', 'cc', 1, 'p', '')").run();
+    db.prepare("INSERT INTO installments (id, group_id, bill_id, title, total_amount, installment_amount, tenor, paid_count, start_date, due_day) VALUES ('i', 'g', 'b', 'Laptop', 6000000, 500000, 12, 0, '2026-08-01', 15)").run();
+    db.prepare("INSERT INTO transactions (id, group_id, type, amount, category_id, credit_card_id, bill_id, installment_id, occurred_at, merchant, description, owner_profile_id, created_by) VALUES ('tx', 'g', 'expense', 6000000, 'c', 'cc', 'b', 'i', '2026-08-01', 'Laptop', '', 'p', 'p')").run();
+
+    const v = runMigrations(db);
+    assert.ok(v >= 10, "migration 010 applied");
+
+    const item = db.prepare("SELECT amount, item_type FROM credit_card_statement_items WHERE transaction_id = 'tx'").get() as { amount: number; item_type: string };
+    assert.equal(item.item_type, "installment", "item menjadi installment");
+    assert.equal(item.amount, 500000, "item menjadi slice periode berjalan");
+
+    assert.ok(columnExists(db, "credit_card_statement_items", "paid_by_transaction_id"), "kolom paid_by_transaction_id ada");
+
+    const v2 = runMigrations(db);
+    assert.equal(v2, v);
+    const item2 = db.prepare("SELECT amount, item_type FROM credit_card_statement_items WHERE transaction_id = 'tx'").get() as { amount: number; item_type: string };
+    assert.equal(item2.amount, 500000);
+    assert.equal(item2.item_type, "installment");
+  } finally {
+    db.close();
+  }
+});
+
+test("migration 010: full-principal item on PAID statement NOT converted (ambiguous, reported)", () => {
+  const { db, dir } = openTempDb();
+  try {
+    db.prepare("INSERT INTO groups (id, name, owner_profile_id) VALUES ('g', 'Test', 'p')").run();
+    db.prepare("INSERT INTO profiles (id, group_id, name, email, role, is_active, color) VALUES ('p', 'g', 'Test', 't@t.com', 'admin', 1, '#000')").run();
+    db.prepare("INSERT INTO credit_cards (id, group_id, name, issuer, last_four, statement_day, due_day, credit_limit) VALUES ('cc', 'g', 'Test CC', 'Test', '0000', 30, 15, 10000000)").run();
+    db.prepare("INSERT INTO statements (id, group_id, credit_card_id, period_start, period_end, statement_amount, paid_amount, due_date, status) VALUES ('st', 'g', 'cc', '2026-07-31', '2026-08-30', 0, 6000000, '2026-09-15', 'paid')").run();
+    db.prepare("INSERT INTO bills (id, group_id, title, type, amount, paid_amount, category_id, credit_card_id, is_active, owner_profile_id, notes) VALUES ('b', 'g', 'Laptop', 'installment', 6000000, 0, 'c', 'cc', 1, 'p', '')").run();
+    db.prepare("INSERT INTO installments (id, group_id, bill_id, title, total_amount, installment_amount, tenor, paid_count, start_date, due_day) VALUES ('i', 'g', 'b', 'Laptop', 6000000, 500000, 12, 0, '2026-08-01', 15)").run();
+    db.prepare("INSERT INTO transactions (id, group_id, type, amount, category_id, credit_card_id, bill_id, installment_id, occurred_at, merchant, description, owner_profile_id, created_by) VALUES ('tx', 'g', 'expense', 6000000, 'c', 'cc', 'b', 'i', '2026-08-01', 'Laptop', '', 'p', 'p')").run();
+
+    const v = runMigrations(db);
+    assert.ok(v >= 10);
+
+    const item = db.prepare("SELECT amount, item_type FROM credit_card_statement_items WHERE transaction_id = 'tx'").get() as { amount: number; item_type: string };
+    assert.equal(item.item_type, "purchase", "item pada statement paid TIDAK diubah (ambigu)");
+    assert.equal(item.amount, 6000000, "amount full-principal TIDAK diubah");
+  } finally {
+    db.close();
+  }
+});

@@ -965,7 +965,6 @@ export function BillDetailPage() {
   const owner = memberById(data, item.ownerProfileId ?? "");
   const cat = item.categoryId ? categoryById(data, item.categoryId) : null;
   const remaining = item.remainingAmount;
-  const canPay = remaining > 0;
 
   const isInstallment = item.domainType === "installment";
   const isStatement = item.domainType === "credit_card_statement";
@@ -980,7 +979,19 @@ export function BillDetailPage() {
     paidCount?: number;
     paidAmount?: number;
     progressText?: string;
+    fundedByCc?: boolean;
+    remainingTotalLiability?: number;
   };
+
+  const isCcInstallment = isInstallment && Boolean(instMeta.fundedByCc);
+  // R09: cicilan kartu kredit — kewajiban terbayar diwakili oleh statement, bukan sisa bill.
+  const liabilityRemaining = isCcInstallment
+    ? Math.max(0, (instMeta.installmentAmount ?? 0) - (instMeta.paidAmount ?? 0))
+    : remaining;
+  const fullRemaining = isCcInstallment
+    ? Math.max(0, instMeta.remainingTotalLiability ?? 0)
+    : remaining;
+  const canPayBill = isCcInstallment ? fullRemaining > 0 : remaining > 0;
 
   const stmtMeta = item.metadata as {
     cardName?: string;
@@ -1023,14 +1034,21 @@ export function BillDetailPage() {
         </div>
 
         <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <Stat label="Total Tagihan" value={formatIDR(item.amount)} />
+          <Stat label={isCcInstallment ? "Cicilan per Bulan" : "Total Tagihan"} value={formatIDR(isCcInstallment ? (instMeta.installmentAmount ?? item.amount) : item.amount)} />
           <Stat label="Sudah Dibayar" value={formatIDR(item.paidAmount)} />
           <Stat
-            label="Sisa Kewajiban"
-            value={formatIDR(remaining)}
-            tone={remaining > 0 ? (isReceivable ? "good" : "bad") : "good"}
+            label={isCcInstallment ? "Sisa Periode Ini" : "Sisa Kewajiban"}
+            value={formatIDR(isCcInstallment ? liabilityRemaining : remaining)}
+            tone={liabilityRemaining > 0 ? (isReceivable ? "good" : "bad") : "good"}
           />
         </div>
+
+        {isCcInstallment && (
+          <div className="mt-3 rounded-xl border border-brand-200 bg-brand-50 p-3 text-xs font-medium text-brand-700 dark:border-brand-800 dark:bg-brand-950/15 dark:text-brand-300">
+            Cicilan ini dibayar melalui tagihan kartu kredit. Periode berjalan ditagihkan ke
+            statement; sisa tenor menjadi komitmen cicilan dan tidak dihitung dua kali.
+          </div>
+        )}
 
         {/* Progress Cicilan (Section 9) */}
         {isInstallment && instMeta.tenor && (
@@ -1058,19 +1076,21 @@ export function BillDetailPage() {
           {Boolean(item.metadata.notes) && <D label="Catatan" value={String(item.metadata.notes)} />}
         </dl>
 
-        {canPay && (
+        {canPayBill && (
           <div className="mt-6 flex flex-col gap-2.5">
             <Button className="w-full" size="lg" onClick={() => setPayOpen(true)}>
               <Lightning size={18} weight="fill" />
               {isStatement
                 ? "Bayar Tagihan Kartu Kredit"
-                : isInstallment
+                : isCcInstallment
                   ? "Bayar Cicilan Periode Ini"
-                  : isDebt
-                    ? "Bayar Hutang"
-                    : isReceivable
-                      ? "Terima Pembayaran Piutang"
-                      : "Bayar Tagihan"}
+                  : isInstallment
+                    ? "Bayar Cicilan Periode Ini"
+                    : isDebt
+                      ? "Bayar Hutang"
+                      : isReceivable
+                        ? "Terima Pembayaran Piutang"
+                        : "Bayar Tagihan"}
             </Button>
             {isInstallment && (
               <Button
@@ -1096,7 +1116,7 @@ export function BillDetailPage() {
             )}
           </div>
         )}
-        {!canPay && (
+        {!canPayBill && (
           <div className="mt-6 flex items-center justify-center gap-2 rounded-xl bg-emerald-50 py-3 text-sm font-bold text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
             <Check size={16} weight="bold" /> Kewajiban Lunas
           </div>
@@ -1138,8 +1158,8 @@ export function BillDetailPage() {
         open={payOpen}
         onClose={() => setPayOpen(false)}
         title={isReceivable ? `Terima Pembayaran ${item.title}` : `Bayar ${item.title}`}
-        defaultAmount={isInstallment ? (instMeta.installmentAmount ?? remaining) : remaining}
-        maxAmount={remaining}
+        defaultAmount={isCcInstallment ? (instMeta.installmentAmount ?? liabilityRemaining) : isInstallment ? (instMeta.installmentAmount ?? remaining) : remaining}
+        maxAmount={isCcInstallment ? fullRemaining : remaining}
         fullOption={isInstallment}
         isStatement={isStatement}
         confirmLabel={isReceivable ? "Terima Pembayaran" : "Bayar"}
@@ -1148,18 +1168,25 @@ export function BillDetailPage() {
             ? "Anda menerima pembayaran piutang — dana masuk ke wallet yang dipilih."
             : isDebt
               ? "Anda membayar hutang — dana keluar dari wallet yang dipilih."
-              : undefined
+              : isCcInstallment
+                ? "Pembayaran cicilan via kartu kredit akan mengurangi tagihan kartu kredit, bukan menambah pengeluaran."
+                : undefined
         }
         onPay={async (walletId, amount, method, full) => {
           try {
             if (isStatement && item.statementId) {
-              // Statement (baik terhubung bill maupun sintesis) dibayar via
-              // endpoint statement — bukan /api/bills/:id/pay (yang hanya membaca tabel bills).
               await payCreditCardStatement(item.statementId, { amount, walletId });
             } else {
               await payBill(item.sourceId, { amount, walletId, method, full });
             }
-            toast.push("success", isStatement ? "Statement kartu kredit dibayar" : isReceivable ? "Pembayaran piutang diterima" : "Pembayaran berhasil");
+            toast.push(
+              "success",
+              isStatement
+                ? "Statement kartu kredit dibayar"
+                : isReceivable
+                  ? "Pembayaran piutang diterima"
+                  : "Pembayaran berhasil",
+            );
             setPayOpen(false);
             loadDetail();
           } catch (e) {
@@ -1245,7 +1272,10 @@ function StatementItemsSection({
             >
               <div>
                 <span className="block font-medium text-ink">{it.merchant}</span>
-                <span className="text-xs text-ink-muted">{fmtDateID(it.occurredAt)} · {statementItemTypeLabel(it.itemType)}</span>
+                <span className="text-xs text-ink-muted">
+                  {fmtDateID(it.occurredAt)} · {statementItemTypeLabel(it.itemType)}
+                  {it.isDerived ? " · periode berjalan" : ""}
+                </span>
               </div>
               <span className="tnum font-semibold text-ink">{formatIDR(it.amount)}</span>
             </button>

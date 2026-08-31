@@ -467,6 +467,10 @@ export function Sheet({
   const [mobile, setMobile] = useState(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+  // Ref onClose agar handler (Escape) selalu memakai callback terbaru TANPA
+  // membuat effect fokus ikut berjalan ulang saat parent re-render.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 639px)");
@@ -477,17 +481,24 @@ export function Sheet({
   }, []);
 
   // R07-C: initial focus + focus trap + focus restoration.
+  // Dependency HANYA [open, dismissable] — bukan onClose — agar fokus TIDAK
+  // berpindah ke tombol Close saat parent re-render akibat perubahan state
+  // form (identity onClose inline berubah setiap re-render).
   useEffect(() => {
     if (!open) return;
     triggerRef.current = document.activeElement as HTMLElement | null;
 
     const panel = panelRef.current;
     if (panel) {
-      const first = panel.querySelector<HTMLElement>(
+      // Prioritas: fokus ke input yang sesuai bila ada; fallback ke elemen
+      // focusable pertama (mis. tombol pada dialog konfirmasi).
+      const input = panel.querySelector<HTMLElement>("input, select, textarea");
+      const firstFocusable = panel.querySelector<HTMLElement>(
         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
       );
-      // Fokus elemen pertama setelah panel dirender (sedikit delay untuk layout).
-      window.setTimeout(() => first?.focus(), 30);
+      const target = input ?? firstFocusable;
+      // Fokus elemen target setelah panel dirender (sedikit delay untuk layout).
+      window.setTimeout(() => target?.focus(), 30);
     }
 
     const handleTab = (e: KeyboardEvent) => {
@@ -510,7 +521,7 @@ export function Sheet({
     };
 
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && dismissable) onClose();
+      if (e.key === "Escape" && dismissable) onCloseRef.current();
     };
     document.body.style.overflow = "hidden";
     document.addEventListener("keydown", handleTab);
@@ -522,7 +533,7 @@ export function Sheet({
       // Fokus kembali ke elemen pemicu setelah tutup.
       triggerRef.current?.focus?.();
     };
-  }, [open, onClose, dismissable]);
+  }, [open, dismissable]);
 
   if (!open) return null;
 

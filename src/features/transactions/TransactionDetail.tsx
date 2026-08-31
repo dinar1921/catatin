@@ -34,8 +34,19 @@ export function TransactionDetailSheet({
   const creator = memberById(data, tx.createdBy);
   const bill = tx.billId ? data.bills.find((b) => b.id === tx.billId) : null;
   const inst = tx.installmentId ? data.installments.find((i) => i.id === tx.installmentId) : null;
+  const card = tx.creditCardId ? data.creditCards.find((c) => c.id === tx.creditCardId) : null;
+  const stmt = tx.statementId ? data.statements.find((s) => s.id === tx.statementId) : null;
 
-  const typeLabel = isTransfer ? "Transfer" : tx.type === "income" ? "Pemasukan" : tx.type === "expense" ? "Pengeluaran" : "Pembayaran Kartu Kredit";
+  const isCcInstallment = Boolean(tx.installmentId && tx.creditCardId);
+  const typeLabel = isTransfer
+    ? "Transfer"
+    : isCcInstallment
+      ? "Cicilan Kartu Kredit"
+      : tx.type === "income"
+        ? "Pemasukan"
+        : tx.type === "expense"
+          ? "Pengeluaran"
+          : "Pembayaran Kartu Kredit";
   const isSettlement = isCreditCardSettlement(tx);
 
   const sourceWallet = pair ? walletById(data, pair.sourceWalletId) : wallet;
@@ -123,6 +134,31 @@ export function TransactionDetailSheet({
               )
             )}
 
+            {isCcInstallment && inst && (
+              <div className="rounded-xl border border-brand-200 bg-brand-50 p-3 dark:border-brand-800 dark:bg-brand-950/15">
+                <p className="text-xs font-semibold uppercase tracking-wide text-brand-700 dark:text-brand-300">
+                  Detail Cicilan
+                </p>
+                <p className="mt-1 text-sm font-semibold text-ink">
+                  {formatIDR(inst.installmentAmount)} × {inst.tenor}
+                </p>
+                <p className="text-xs text-ink-muted">
+                  Progress: {inst.paidCount}/{inst.tenor} Bulan
+                </p>
+                {stmt && (
+                  <p className="mt-1 text-xs text-ink-muted">
+                    Tertagih di statement {stmt.periodStart.slice(0, 7)} —{" "}
+                    {stmt.remainingAmount != null ? formatIDR(stmt.remainingAmount) : "—"}
+                  </p>
+                )}
+                {card && (
+                  <p className="text-xs text-ink-muted">
+                    Kartu: {card.name} {card.lastFour ? `•••• ${card.lastFour}` : ""}
+                  </p>
+                )}
+              </div>
+            )}
+
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
               {isTransfer ? (
                 <>
@@ -140,6 +176,7 @@ export function TransactionDetailSheet({
               {!isTransfer && tx.creditCardId && (
                 <Detail label="Kartu kredit" value={data.creditCards.find((c) => c.id === tx.creditCardId)?.name ?? "—"} />
               )}
+              {stmt && <Detail label="Periode statement" value={`${stmt.periodStart.slice(0, 7)} — ${stmt.periodEnd.slice(0, 7)}`} />}
               <Detail label="Sumber" value={sourceLabel(tx.source)} />
             </dl>
 

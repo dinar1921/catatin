@@ -11,7 +11,7 @@
     "seed": "tsx src/db/run-seed.ts",
     "db:backup": "tsx src/db/run-backup.ts",
     "db:reconcile": "tsx src/db/run-reconcile.ts",
-    "test": "tsx --test tests/migrate.test.ts tests/settlement-targeting.test.ts tests/regression.test.ts tests/statements.test.ts tests/bills-unified.test.ts tests/debt-receivable.test.ts tests/credit-card-scope.test.ts tests/health.test.ts tests/wallet-transfer-logic.test.ts"
+    "test": "tsx --test tests/migrate.test.ts tests/settlement-targeting.test.ts tests/regression.test.ts tests/statements.test.ts tests/bills-unified.test.ts tests/debt-receivable.test.ts tests/credit-card-scope.test.ts tests/health.test.ts tests/wallet-transfer-logic.test.ts tests/installment-cc-domain.test.ts tests/financial-integrity.test.ts tests/historical-normalization.test.ts tests/reconcile-v4.test.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.0.2",

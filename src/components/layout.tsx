@@ -188,7 +188,7 @@ function MobileNav() {
     { to: "/dashboard", label: "Beranda", icon: House },
     { to: "/transactions", label: "Transaksi", icon: ArrowsLeftRight },
     { to: "/bills", label: "Tagihan", icon: Receipt },
-    { to: "/settings", label: "Lainnya", icon: GearSix },
+    { to: "/settings", label: "Setting", icon: GearSix },
   ];
 
   return (

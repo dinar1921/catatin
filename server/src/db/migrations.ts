@@ -321,6 +321,165 @@ const migration007: Migration = {
   },
 };
 
+const migration008: Migration = {
+  id: 8,
+  name: "cc-installment-slice-items",
+  up(db: DatabaseSync) {
+    // R09: perbaiki statement item cicilan kartu kredit yang dibuat dengan model lama
+    // (item_type='purchase' + amount = total principal). Hanya ditangani bila DETERMINISTIK
+    // dan AMAN:
+    // 1. item_type = 'purchase'
+    // 2. amount = total_amount cicilan (full principal) DAN total_amount > installment_amount
+    // 3. statement-nya belum dibayar sama sekali (paid_amount = 0) — tidak menyentuh histori pembayaran
+    // 4. transaksi pemilik item adalah pembelian cicilan (installment_id terisi, credit_card_id terisi)
+    // Hasil: item menjadi slice periode berjalan (item_type='installment', amount=installment_amount).
+    // Idempoten: setelah migrasi, kondisi amount = total_amount tidak lagi terpenuhi.
+    db.exec(`
+      UPDATE credit_card_statement_items
+      SET amount = (
+            SELECT i.installment_amount
+            FROM installments i
+            JOIN transactions t ON t.installment_id = i.id
+            WHERE t.id = credit_card_statement_items.transaction_id
+          ),
+          item_type = 'installment'
+      WHERE item_type = 'purchase'
+        AND EXISTS (
+          SELECT 1
+          FROM installments i
+          JOIN transactions t ON t.installment_id = i.id
+          WHERE t.id = credit_card_statement_items.transaction_id
+            AND t.credit_card_id IS NOT NULL
+            AND i.total_amount = credit_card_statement_items.amount
+            AND i.total_amount > i.installment_amount
+        )
+        AND EXISTS (
+          SELECT 1 FROM statements s
+          WHERE s.id = credit_card_statement_items.statement_id AND s.paid_amount = 0
+        )
+    `);
+
+    // Hubungkan bill cicilan kartu kredit ke statement pembelian bila DETERMINISTIK
+    // (semua transaksi pembelian bill tersebut menunjuk ke SATU statement yang sama).
+    db.exec(`
+      UPDATE bills
+      SET statement_id = (
+        SELECT t.statement_id
+        FROM transactions t
+        WHERE t.bill_id = bills.id AND t.statement_id IS NOT NULL
+        GROUP BY t.statement_id
+        HAVING COUNT(*) = (
+          SELECT COUNT(*) FROM transactions t2
+          WHERE t2.bill_id = bills.id AND t2.statement_id IS NOT NULL
+        )
+        LIMIT 1
+      )
+      WHERE type = 'installment' AND credit_card_id IS NOT NULL AND statement_id IS NULL
+        AND EXISTS (
+          SELECT 1 FROM transactions t
+          WHERE t.bill_id = bills.id AND t.statement_id IS NOT NULL
+        )
+        AND (
+          SELECT COUNT(DISTINCT t.statement_id)
+          FROM transactions t
+          WHERE t.bill_id = bills.id AND t.statement_id IS NOT NULL
+        ) = 1
+    `);
+  },
+};
+
+const migration009: Migration = {
+  id: 9,
+  name: "statements-period-unique",
+  up(db: DatabaseSync) {
+    // R09.1: cegah statement duplikat (race check-then-insert saat read/write bersamaan).
+    // 1) Dedupe deterministik: per (group, card, period) pertahankan statement dengan rowid
+    //    terkecil (paling awal dibuat); pindahkan item/settlement/bill ke yang dipertahankan;
+    //    hapus duplikat (biasanya statement kosong hasil race GET).
+    const dupes = db
+      .prepare(
+        `SELECT group_id, credit_card_id, period_start, period_end, MIN(rowid) AS keep_rowid
+         FROM statements
+         GROUP BY group_id, credit_card_id, period_start, period_end
+         HAVING COUNT(*) > 1`,
+      )
+      .all() as { group_id: string; credit_card_id: string | null; period_start: string; period_end: string; keep_rowid: number }[];
+
+    for (const d of dupes) {
+      const keep = db.prepare("SELECT id FROM statements WHERE rowid = ?").get(d.keep_rowid) as { id: string } | undefined;
+      if (!keep) continue;
+      const others = db
+        .prepare(
+          `SELECT id, rowid FROM statements
+           WHERE group_id = ? AND credit_card_id IS ? AND period_start = ? AND period_end = ? AND rowid <> ?`,
+        )
+        .all(d.group_id, d.credit_card_id, d.period_start, d.period_end, d.keep_rowid) as { id: string }[];
+
+      for (const o of others) {
+        // Pindahkan item (abaikan pasangan statement+transaction yang sudah ada di keep)
+        db.prepare(
+          `INSERT OR IGNORE INTO credit_card_statement_items (id, group_id, statement_id, transaction_id, amount, item_type, description, created_at)
+           SELECT id, group_id, ?, transaction_id, amount, item_type, description, created_at
+           FROM credit_card_statement_items WHERE statement_id = ?`,
+        ).run(keep.id, o.id);
+        db.prepare("DELETE FROM credit_card_statement_items WHERE statement_id = ?").run(o.id);
+        // Pindahkan relasi settlement & bill
+        db.prepare("UPDATE transactions SET statement_id = ? WHERE statement_id = ?").run(keep.id, o.id);
+        db.prepare("UPDATE bills SET statement_id = ? WHERE statement_id = ?").run(keep.id, o.id);
+        db.prepare("DELETE FROM statements WHERE id = ?").run(o.id);
+      }
+    }
+
+    // 2) Unique index — idempoten.
+    db.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_statements_period_unique
+       ON statements(group_id, credit_card_id, period_start, period_end)`,
+    );
+  },
+};
+
+const migration010: Migration = {
+  id: 10,
+  name: "installment-payoff-settlement-link",
+  up(db: DatabaseSync) {
+    // R09.2 — Payoff integrity: item statement yang di-subsum oleh payoff (in-arrears
+    // yang belum settle) TIDAK dihapus; settlement direpresentasikan lewat kolom
+    // paid_by_transaction_id. Kolom additive, nullable — aman untuk semua DB.
+    if (!columnExists(db, "credit_card_statement_items", "paid_by_transaction_id")) {
+      db.exec("ALTER TABLE credit_card_statement_items ADD COLUMN paid_by_transaction_id TEXT");
+    }
+
+    // R09.2 — Re-guard deterministik (idempoten): item full-principal pada statement
+    // BELUM dibayar (paid_amount = 0) dikonversi ke slice periode berjalan.
+    // Sama dengan migrasi 008; diulang untuk data yang masuk setelah 008.
+    // Item pada statement paid/partially-paid TIDAK disentuh (ambigu — dilaporkan).
+    db.exec(`
+      UPDATE credit_card_statement_items
+      SET amount = (
+            SELECT i.installment_amount
+            FROM installments i
+            JOIN transactions t ON t.installment_id = i.id
+            WHERE t.id = credit_card_statement_items.transaction_id
+          ),
+          item_type = 'installment'
+      WHERE item_type = 'purchase'
+        AND EXISTS (
+          SELECT 1
+          FROM installments i
+          JOIN transactions t ON t.installment_id = i.id
+          WHERE t.id = credit_card_statement_items.transaction_id
+            AND t.credit_card_id IS NOT NULL
+            AND i.total_amount = credit_card_statement_items.amount
+            AND i.total_amount > i.installment_amount
+        )
+        AND EXISTS (
+          SELECT 1 FROM statements s
+          WHERE s.id = credit_card_statement_items.statement_id AND s.paid_amount = 0
+        )
+    `);
+  },
+};
+
 export const migrations: Migration[] = [
   migration001,
   migration002,
@@ -329,4 +488,7 @@ export const migrations: Migration[] = [
   migration005,
   migration006,
   migration007,
+  migration008,
+  migration009,
+  migration010,
 ];

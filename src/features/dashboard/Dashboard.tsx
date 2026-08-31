@@ -67,7 +67,13 @@ export function DashboardPage() {
       .then((res) => {
         if (cancelled) return;
         const active = res.items.filter(
-          (i) => i.status !== "paid" && i.status !== "paid_off" && i.status !== "completed" && i.status !== "cancelled",
+          (i) =>
+            i.status !== "paid" &&
+            i.status !== "paid_off" &&
+            i.status !== "completed" &&
+            i.status !== "cancelled" &&
+            // R09: cicilan kartu kredit diwakili statement (payable) — jangan tampil dua kali.
+            !(i.domainType === "installment" && i.metadata.fundedByCc),
         );
         setUpcoming(active.slice(0, 4));
       })

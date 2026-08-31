@@ -6,7 +6,7 @@ import { sv, svs, nid } from "../db/sql.js";
 import { logActivity } from "../services/audit.js";
 import { assertWalletOwnership, assertCreditCardOwnership, assertCreditCardScope, assertCategoryOwnership, assertProfileOwnership, firstValidationError } from "../validation.js";
 import { getUnifiedBills } from "../services/unified-bills.js";
-import { getStatementCalc } from "../services/statement-domain.js";
+import { getStatementCalc, payStatement, payoffInstallmentCc, DomainError, getInstallmentCurrentStatement } from "../services/statement-domain.js";
 
 const router = Router();
 
@@ -198,6 +198,63 @@ function handlePayExecution(
 
   const billType = bill.type as string;
   const isStatement = billType === "credit_card_statement";
+  const isCcInstallment = billType === "installment" && bill.credit_card_id != null;
+
+  // ---- R09: cicilan kartu kredit dibayar melalui statement kartu kredit ----
+  // Bayar periode = settlement statement (wallet ↓, liability ↓, TANPA expense kedua).
+  // Lunasi sisa = payoff installment yang memposting sisa ke statement lalu settle.
+  if (isCcInstallment) {
+    const instRow = db
+      .prepare("SELECT id FROM installments WHERE bill_id = ? AND group_id = ?")
+      .get(id, groupId) as { id: string } | undefined;
+    if (!instRow) {
+      res.status(409).json({ error: "Cicilan tidak ditemukan" });
+      return;
+    }
+
+    try {
+      if (opts.full) {
+        const result = payoffInstallmentCc(db, groupId, instRow.id, opts.walletId, req.profile!.id);
+        logActivity(groupId, req.profile!.id, "installment.pay_full", { installmentId: instRow.id, amount: result.paid });
+        res.status(201).json({ id: result.id, paid: result.paid });
+        return;
+      }
+
+      // Statement yang menampung slice periode berjalan cicilan ini (deterministik
+      // dari schedule — R09.1: slice berjalan bisa berupa item derived).
+      const stmtId = getInstallmentCurrentStatement(db, groupId, instRow.id);
+
+      if (!stmtId) {
+        res.status(409).json({
+          error: "Belum ada periode cicilan yang ditagihkan pada statement. Pastikan transaksi cicilan sudah masuk statement.",
+        });
+        return;
+      }
+
+      const result = payStatement(db, groupId, stmtId, opts.amount, opts.walletId, req.profile!.id, {
+        billId: id,
+        installmentId: instRow.id,
+        method: opts.method ?? null,
+      });
+      logActivity(groupId, req.profile!.id, "installment.pay_period", {
+        installmentId: instRow.id,
+        statementId: stmtId,
+        amount: result.paid,
+        completedInstallments: result.completedInstallments,
+      });
+      res.status(201).json({ id: result.id, paid: result.paid });
+      return;
+    } catch (e) {
+      if (e instanceof DomainError) {
+        res.status(e.status).json({ error: e.message });
+        return;
+      }
+      console.error("[bills] CC installment pay error:", e);
+      res.status(500).json({ error: "Gagal memproses pembayaran cicilan kartu kredit" });
+      return;
+    }
+  }
+
   const amount = Number(bill.amount ?? 0);
   const paidAmount = Number(bill.paid_amount ?? 0);
   const remaining = Math.max(0, amount - paidAmount);

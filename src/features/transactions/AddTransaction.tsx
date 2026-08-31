@@ -7,6 +7,7 @@ import { expenseCats, incomeCats } from "../../lib/derive";
 import { todayISO } from "../../lib/dates";
 import { AmountInput, Button, Card, Field, Input, Select, useToast } from "../../components/ui";
 import { PageHeader } from "../../components/layout";
+import { formatIDR } from "../../lib/format";
 import type { Attachment, PaymentMethod, TransactionType } from "../../lib/types";
 
 export function AddTransactionPage() {
@@ -258,6 +259,12 @@ function ManualForm() {
               <Field label="Nominal cicilan per bulan" error={errors.installmentAmount}>
                 <AmountInput value={installmentAmount} onChange={setInstallmentAmount} showTerbilang={false} compact />
               </Field>
+              {paymentMethod === "Credit Card" && (
+                <p className="rounded-xl bg-white/60 p-2.5 text-xs font-medium text-brand-700 dark:bg-slate-900/60 dark:text-brand-300">
+                  Cicilan kartu kredit: hanya cicilan berjalan yang ditagihkan ke statement
+                  ({installmentAmount > 0 ? formatIDR(installmentAmount) : "—"}); sisa tenor menjadi komitmen cicilan.
+                </p>
+              )}
             </div>
           )}
         </div>

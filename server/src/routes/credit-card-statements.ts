@@ -2,10 +2,9 @@ import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
-import { sv, nid } from "../db/sql.js";
 import { logActivity } from "../services/audit.js";
 import { assertWalletOwnership, firstValidationError } from "../validation.js";
-import { getStatementCalc } from "../services/statement-domain.js";
+import { getStatementCalc, payStatement, DomainError, getDerivedSlicesForStatement } from "../services/statement-domain.js";
 
 const router = Router();
 
@@ -14,12 +13,10 @@ const payStmtSchema = z.object({
   walletId: z.string().min(1, "Wallet wajib diisi"),
 });
 
-function todayISO(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-/** GET /api/credit-card-statements/:id — detail statement + daftar item transaksi (Phase 13). */
+/** GET /api/credit-card-statements/:id — detail statement + daftar item transaksi (Phase 13).
+ * R09.1: GET read-only — TIDAK ada mutasi DB. Item periode berjalan yang belum
+ * dimaterialisasi ditampilkan sebagai item DERIVED (isDerived: true).
+ */
 router.get("/:id", requireAuth, (req: Request, res: Response) => {
   const { id } = req.params;
   const groupId = req.groupId!;
@@ -30,7 +27,7 @@ router.get("/:id", requireAuth, (req: Request, res: Response) => {
     return;
   }
 
-  // Ambil item penyusun statement
+  // Ambil item penyusun statement (historis tersimpan — immutable)
   const items = db
     .prepare(
       `SELECT csi.id, csi.transaction_id AS transactionId, csi.item_type AS itemType,
@@ -52,22 +49,39 @@ router.get("/:id", requireAuth, (req: Request, res: Response) => {
     occurredAt: string | null;
   }[];
 
+  // Item derived (periode berjalan yang belum dimaterialisasi — read-only)
+  const derived = getDerivedSlicesForStatement(db, groupId, id);
+
   res.json({
     statement: calc,
-    items: items.map((i) => ({
-      id: i.id,
-      transactionId: i.transactionId,
-      itemType: i.itemType,
-      merchant: i.merchant || i.description || "Tanpa merchant",
-      amount: i.amount,
-      description: i.description,
-      occurredAt: i.occurredAt || i.createdAt,
-    })),
+    items: [
+      ...items.map((i) => ({
+        id: i.id,
+        transactionId: i.transactionId,
+        itemType: i.itemType,
+        merchant: i.merchant || i.description || "Tanpa merchant",
+        amount: i.amount,
+        description: i.description,
+        occurredAt: i.occurredAt || i.createdAt,
+        isDerived: false,
+      })),
+      ...derived.map((d) => ({
+        id: `derived-${d.installmentId}`,
+        transactionId: null,
+        itemType: "installment",
+        merchant: "Cicilan",
+        amount: d.amount,
+        description: `Cicilan periode berjalan (periode ${d.periodStart.slice(0, 7)})`,
+        occurredAt: d.periodStart,
+        isDerived: true,
+      })),
+    ],
   });
 });
 
 /** POST /api/credit-card-statements/:id/pay — bayar tagihan statement kartu kredit (Phase 14).
- * Delegasi ke logika pembayaran settlement eksak (type=transfer, transfer_type=credit_card_payment).
+ * Menggunakan SATU mesin pembayaran statement (payStatement) yang juga dipakai
+ * /api/bills/:id/pay — tidak ada duplikasi logika pembayaran.
  */
 router.post("/:id/pay", requireAuth, (req: Request, res: Response) => {
   const { id } = req.params;
@@ -91,60 +105,20 @@ router.post("/:id/pay", requireAuth, (req: Request, res: Response) => {
     return;
   }
 
-  const payAmount = Math.min(parsed.data.amount, calc.remainingAmount);
-  if (payAmount <= 0) {
-    res.status(400).json({ error: "Nominal pembayaran tidak valid atau statement sudah lunas" });
-    return;
-  }
-
-  // Cek apakah ada bill yang terhubung dengan statement ini
-  const bill = db
-    .prepare("SELECT id FROM bills WHERE statement_id = ? AND group_id = ? AND is_active = 1")
-    .get(id, groupId) as { id: string } | undefined;
-
-  const txId = nid("t");
-  const now = new Date().toISOString();
-
-  db.exec("BEGIN");
   try {
-    db.prepare(
-      `INSERT INTO transactions (id, group_id, type, transfer_type, source, amount, category_id, wallet_id, payment_method, credit_card_id, statement_id, occurred_at, merchant, description, owner_profile_id, created_by, bill_id, attachment_json, items_json, created_at)
-       VALUES (?, ?, 'transfer', 'credit_card_payment', 'manual', ?, 'c-lain', ?, 'Debit Card', ?, ?, ?, 'Kartu Kredit', 'Bayar tagihan kartu kredit', ?, ?, ?, NULL, '[]', ?)`,
-    ).run(
-      sv(txId),
-      sv(groupId),
-      sv(payAmount),
-      sv(parsed.data.walletId),
-      sv(calc.creditCardId),
-      sv(id),
-      sv(todayISO()),
-      sv(req.profile!.id),
-      sv(req.profile!.id),
-      sv(bill?.id ?? null),
-      now,
-    );
-
-    // Cap paid_amount dengan statement amount EFEKTIF (official ?? derived),
-    // bukan kolom statement_amount yang bisa 0 untuk statement hasil derivasi.
-    db.prepare(
-      "UPDATE statements SET paid_amount = MIN(?, paid_amount + ?) WHERE id = ? AND group_id = ?",
-    ).run(sv(calc.statementAmount), sv(payAmount), sv(id), sv(groupId));
-
-    if (bill) {
-      db.prepare(
-        "UPDATE bills SET paid_amount = MIN(amount, paid_amount + ?) WHERE id = ? AND group_id = ?",
-      ).run(sv(payAmount), sv(bill.id), sv(groupId));
-    }
-
-    db.exec("COMMIT");
+    const result = payStatement(db, groupId, id, parsed.data.amount, parsed.data.walletId, req.profile!.id);
     logActivity(groupId, req.profile!.id, "credit_card_statement.pay", {
       statementId: id,
-      amount: payAmount,
-      transactionId: txId,
+      amount: result.paid,
+      transactionId: result.id,
+      completedInstallments: result.completedInstallments,
     });
-    res.status(201).json({ id: txId, paid: payAmount });
+    res.status(201).json({ id: result.id, paid: result.paid });
   } catch (e) {
-    db.exec("ROLLBACK");
+    if (e instanceof DomainError) {
+      res.status(e.status).json({ error: e.message });
+      return;
+    }
     console.error("[credit-card-statements] pay error:", e);
     res.status(500).json({ error: "Gagal memproses pembayaran statement" });
   }
